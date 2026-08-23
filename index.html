@@ -121,31 +121,43 @@
     /* 長い選択肢（例：子供NISA（ジュニアNISA））でもグリッド枠からはみ出さないように */
     text-overflow:ellipsis;
   }
+  /* 日付入力：iOS Safari の内部部品が入力欄の幅を押し広げる問題への対策 */
   input[type="date"]{
-    /* 日付入力欄はブラウザ標準のカレンダーアイコン等を含むため、内側の余白を
-       やや控えめにし、スマートフォンでの表示がカードの外にはみ出さないようにする */
-    padding:9px 6px;
+    width:100%;
     min-width:0;
-  }
-  input[type="date"]::-webkit-calendar-picker-indicator{
-    margin-left:2px;
-    padding:0;
-    width:16px;
-    height:16px;
-    flex:0 0 16px;
-  }
-  input[type="date"]::-webkit-datetime-edit{
-    min-width:0;
-    padding:0;
-  }
-  input[type="date"]::-webkit-date-and-time-value{
-    min-width:0;
-    text-align:left;
-  }
-  input[type="date"]{
+    max-width:100%;
+    min-inline-size:0;
+    box-sizing:border-box;
+    display:block;
+    padding:9px 4px;
     overflow:hidden;
     text-overflow:clip;
     white-space:nowrap;
+    -webkit-appearance:auto;
+    appearance:auto;
+  }
+  /* WebKit系（iPhone/iPad Safari）の日付フィールド内部を明示的に縮める */
+  input[type="date"]::-webkit-datetime-edit,
+  input[type="date"]::-webkit-datetime-edit-fields-wrapper{
+    min-width:0;
+    max-width:100%;
+    padding:0;
+    margin:0;
+  }
+  input[type="date"]::-webkit-date-and-time-value{
+    min-width:0;
+    max-width:100%;
+    width:100%;
+    margin:0;
+    padding:0;
+    text-align:left;
+  }
+  input[type="date"]::-webkit-calendar-picker-indicator{
+    flex:0 0 auto;
+    width:18px;
+    height:18px;
+    margin:0 0 0 2px;
+    padding:0;
   }
   input:focus,select:focus{outline:2px solid var(--indigo);outline-offset:1px;}
   .add-btn{
@@ -260,10 +272,20 @@
      自動的にこのレイアウトへ切り替わる（機種の判定ではなく画面幅で判定）。 */
   @media (max-width:480px){
     .wrap{padding:16px 12px 70px;}
+    /* iPhone等で日付入力の内部表示がグリッド幅を超えないように、
+       フィールドと入力要素の幅を同じ基準で固定する */
+    .field-date{
+      width:100%;
+      min-width:0;
+      max-width:100%;
+    }
+    .field-date input[type="date"]{
+      width:100%;
+      min-width:0;
+      max-width:100%;
+    }
     .app-header{flex-wrap:wrap;gap:10px;}
     .entry-form,.entry-form.with-cat{grid-template-columns:1fr;}
-    .field-date{grid-column:1;width:100%;min-width:0;}
-    .field-date input[type="date"]{width:100%;max-width:100%;min-width:0;}
     .add-btn{grid-column:1;width:100%;}
     .stat-grid{grid-template-columns:1fr;}
     .card{padding:16px;}
