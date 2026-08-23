@@ -106,17 +106,26 @@
   /* Form */
   .entry-form{display:grid;grid-template-columns:130px 1fr 130px auto;gap:10px;align-items:end;margin-bottom:6px;}
   .entry-form.with-cat{grid-template-columns:130px 150px 1fr 130px auto;}
-  .field{display:flex;flex-direction:column;gap:5px;}
+  .field{display:flex;flex-direction:column;gap:5px;min-width:0;}
   .field label{font-size:11.5px;color:var(--ink-soft);letter-spacing:.03em;}
   input,select{
-    border:1px solid var(--line);border-radius:8px;padding:9px 10px;font-size:14px;
+    border:1px solid var(--line);border-radius:8px;padding:9px 10px;
+    /* 16px以上にしておかないと、iOSのSafariが入力欄タップ時に画面全体を
+       自動拡大してしまい、レイアウトが崩れて見える原因になるため固定している */
+    font-size:16px;
     font-family:inherit;background:#FCFAF4;color:var(--ink);
+    width:100%;min-width:0;box-sizing:border-box;
+    max-width:100%;
+  }
+  select{
+    /* 長い選択肢（例：子供NISA（ジュニアNISA））でもグリッド枠からはみ出さないように */
+    text-overflow:ellipsis;
   }
   input:focus,select:focus{outline:2px solid var(--indigo);outline-offset:1px;}
   .add-btn{
     background:var(--indigo-deep);color:#fff;border:none;border-radius:8px;
-    padding:9px 18px;font-size:13.5px;font-weight:500;cursor:pointer;font-family:inherit;
-    white-space:nowrap;
+    padding:11px 18px;font-size:14.5px;font-weight:500;cursor:pointer;font-family:inherit;
+    white-space:nowrap;min-height:44px;
   }
   .add-btn:hover{background:var(--indigo);}
 
@@ -208,6 +217,28 @@
     .stat-grid{grid-template-columns:1fr 1fr;}
     .charts,.breakdown{grid-template-columns:1fr;}
   }
+
+  /* スマートフォン相当の幅（480px以下）では、入力欄を1列に積み上げて
+     タップしやすい大きさを確保する。ブラウザの画面幅にあわせて
+     自動的にこのレイアウトへ切り替わる（機種の判定ではなく画面幅で判定）。 */
+  @media (max-width:480px){
+    .wrap{padding:16px 12px 70px;}
+    .app-header{flex-wrap:wrap;gap:10px;}
+    .entry-form,.entry-form.with-cat{grid-template-columns:1fr;}
+    .add-btn{grid-column:1;width:100%;}
+    .stat-grid{grid-template-columns:1fr;}
+    .card{padding:16px;}
+    .month-nav{width:100%;justify-content:space-between;}
+    .mode-banner{flex-direction:column;align-items:stretch;}
+    .mode-actions{width:100%;}
+    .ghost-btn{flex:1;}
+  }
+
+  /* タッチ操作の端末（スマートフォン・タブレット）では、ボタンなどの
+     タップ領域を少し広めに取る。JS側で <html> に is-touch クラスを
+     付与して判定している（画面幅だけでなく入力方式でも判定するため）。 */
+  .is-touch .add-btn,.is-touch .ghost-btn,.is-touch .tab-btn{min-height:40px;}
+  .is-touch .del{min-width:32px;min-height:32px;display:inline-flex;align-items:center;justify-content:center;}
 </style>
 </head>
 <body>
@@ -216,6 +247,60 @@
 </div>
 
 <div class="save-status" id="saveStatus">保存しました</div>
+
+<!--
+  夫婦間のリアルタイム共有（Firebase Realtime Database）用の設定。
+  ここで使っているapiKey等は「アプリの居場所を示す識別子」であり、
+  これ自体が漏れても即座に情報が読み書きされるわけではない
+  （実際のアクセス制御はデータベース側の「ルール」で行っている）。
+  このスクリプトが読み込めない場合（オフライン、通信制限など）は、
+  window.firebaseSyncが設定されないため、アプリは自動的に
+  この端末内保存（localStorage）に切り替わる。
+-->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
+  import { getDatabase, ref, set, remove, onValue } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-database.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyDRoZXsH-22lmpXe9r9DlJVtZZWrd7rmUc",
+    authDomain: "our-household-budget-68d2a.firebaseapp.com",
+    databaseURL: "https://our-household-budget-68d2a-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "our-household-budget-68d2a",
+    storageBucket: "our-household-budget-68d2a.firebasestorage.app",
+    messagingSenderId: "242198106288",
+    appId: "1:242198106288:web:7770d4c13eef35d8972b75"
+  };
+
+  try{
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    window.firebaseSync = {
+      configured: true,
+      subscribe: function(householdId, onData, onError){
+        try{
+          const dbRef = ref(db, "households/" + householdId);
+          onValue(dbRef, function(snapshot){
+            onData(snapshot.val());
+          }, function(err){
+            if(onError) onError(err);
+          });
+        }catch(e){
+          if(onError) onError(e);
+        }
+      },
+      writeRecord: function(householdId, kind, id, recordWithoutId){
+        return set(ref(db, "households/" + householdId + "/" + kind + "/" + id), recordWithoutId);
+      },
+      deleteRecord: function(householdId, kind, id){
+        return remove(ref(db, "households/" + householdId + "/" + kind + "/" + id));
+      }
+    };
+  }catch(e){
+    console.log("Firebaseの初期化に失敗したため、リアルタイム共有は無効になります（この端末内保存に切り替わります）:", e);
+    window.firebaseSync = { configured: false };
+  }
+</script>
 
 <script>
 (function(){
@@ -254,6 +339,9 @@
   ];
 
   const STORAGE_KEY = "budget-data-v1";
+  // 夫婦2人だけの合言葉のようなもの。Firebase側のルールで、この文字列を
+  // 知っているアクセスだけがデータを読み書きできるようになっている。
+  const HOUSEHOLD_ID = "UtepwPCAX6u3pqPDwkGV7fW6JKQwPEMg";
   const el = id => document.getElementById(id);
   const yen = n => "¥" + Math.round(n).toLocaleString("ja-JP");
   // 一部の古いブラウザ・組み込みブラウザでは NodeList.forEach が使えないため、
@@ -267,8 +355,10 @@
   let data = { incomes: [], expenses: [], savings: [] };
   let currentMonth = todayStr().slice(0,7); // YYYY-MM
   let activeTab = "income";
-  // isCloud: true = 共有ストレージ(夫婦で共有)が使えている / false = この端末内保存(localStorage)のみ
-  let isCloud = false;
+  // storageMode: "cloud"    = Claudeアーティファクトの共有ストレージ
+  //              "realtime" = Firebase Realtime Databaseでの即時共有
+  //              "local"    = この端末のブラウザ内保存のみ
+  let storageMode = "local";
 
   function applyParsed(parsed){
     data.incomes = (parsed && parsed.incomes) || [];
@@ -276,11 +366,26 @@
     data.savings = (parsed && parsed.savings) || [];
   }
 
+  function objectToArray(obj){
+    if(!obj) return [];
+    return Object.keys(obj).map(function(id){
+      const rec = Object.assign({}, obj[id]);
+      rec.id = id;
+      return rec;
+    });
+  }
+
+  function applyFirebaseSnapshot(val){
+    data.incomes = objectToArray(val && val.incomes);
+    data.expenses = objectToArray(val && val.expenses);
+    data.savings = objectToArray(val && val.savings);
+  }
+
   // 注意：このアプリはスマートフォンの標準ブラウザや、機種・アプリ内ブラウザの違いによる
   // 互換性の問題を避けるため、意図的に async/await を使わず Promise の .then()/.catch() で
   // 非同期処理を記述している（一部の組み込みブラウザでは async 構文の解釈に失敗することがあるため）。
   function loadLocalFallback(){
-    isCloud = false;
+    storageMode = "local";
     try{
       const raw = localStorage.getItem(STORAGE_KEY);
       if(raw) applyParsed(JSON.parse(raw));
@@ -289,26 +394,66 @@
     }
   }
 
-  function loadData(){
-    // 1) Claudeのアーティファクト上で動作している場合は共有ストレージを試す
-    if(typeof window.storage !== "undefined" && window.storage && typeof window.storage.get === "function"){
-      try{
-        return window.storage.get(STORAGE_KEY, true).then(function(res){
-          isCloud = true;
-          if(res && res.value) applyParsed(JSON.parse(res.value));
-        }).catch(function(e){
-          console.log("共有ストレージが利用できないため、この端末内保存に切り替えます:", e);
-          loadLocalFallback();
-        });
-      }catch(e){
-        console.log("共有ストレージの呼び出しに失敗したため、この端末内保存に切り替えます:", e);
-      }
+  // Firebaseが設定されていればリアルタイム共有を試み、ダメなら端末内保存に切り替える。
+  function tryRealtimeThenLocal(resolve){
+    if(!(window.firebaseSync && window.firebaseSync.configured)){
+      loadLocalFallback();
+      resolve();
+      return;
     }
-    // 2) 単体のHTMLファイルとして開いている場合はブラウザ内保存(localStorage)にフォールバック
-    loadLocalFallback();
-    return Promise.resolve();
+    let settled = false;
+    const timeoutId = setTimeout(function(){
+      if(settled) return;
+      settled = true;
+      console.log("リアルタイム共有への接続がタイムアウトしたため、この端末内保存に切り替えます");
+      loadLocalFallback();
+      resolve();
+    }, 6000);
+
+    window.firebaseSync.subscribe(HOUSEHOLD_ID, function(val){
+      if(!settled){
+        settled = true;
+        clearTimeout(timeoutId);
+        storageMode = "realtime";
+        applyFirebaseSnapshot(val);
+        resolve();
+      }else{
+        // 2回目以降の呼び出し＝自分または相手の端末での変更がリアルタイムに届いたもの
+        applyFirebaseSnapshot(val);
+        render();
+        renderTabs();
+      }
+    }, function(err){
+      if(settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      console.log("リアルタイム共有への接続に失敗したため、この端末内保存に切り替えます:", err);
+      loadLocalFallback();
+      resolve();
+    });
   }
 
+  function loadData(){
+    return new Promise(function(resolve){
+      // 1) Claudeのアーティファクト上で動作している場合は共有ストレージを試す
+      if(typeof window.storage !== "undefined" && window.storage && typeof window.storage.get === "function"){
+        window.storage.get(STORAGE_KEY, true).then(function(res){
+          storageMode = "cloud";
+          if(res && res.value) applyParsed(JSON.parse(res.value));
+          resolve();
+        }).catch(function(e){
+          console.log("共有ストレージが利用できないため、他の保存方法を試します:", e);
+          tryRealtimeThenLocal(resolve);
+        });
+        return;
+      }
+      // 2) Firebaseが設定されていればリアルタイム共有、なければ端末内保存(localStorage)
+      tryRealtimeThenLocal(resolve);
+    });
+  }
+
+  // isCloud時代の一括保存（共有ストレージ／端末内保存の両モードで使用。
+  // realtimeモードはレコード単位で保存するため saveData() は使わない）
   function saveData(){
     const json = JSON.stringify(data);
     function saveLocal(){
@@ -319,24 +464,59 @@
         console.error("保存エラー:", e);
       }
     }
-    if(isCloud){
+    if(storageMode === "cloud"){
       try{
         return window.storage.set(STORAGE_KEY, json, true).then(function(result){
           if(!result) throw new Error("empty result");
           flashSaved();
         }).catch(function(e){
           console.error("共有保存に失敗したため、この端末内保存に切り替えます:", e);
-          isCloud = false;
+          storageMode = "local";
           saveLocal();
         });
       }catch(e){
         console.error("共有保存の呼び出しに失敗したため、この端末内保存に切り替えます:", e);
-        isCloud = false;
+        storageMode = "local";
       }
     }
     saveLocal();
     return Promise.resolve();
   }
+
+  // 追加・削除の1件ごとの永続化。realtimeモードのときはFirebaseの該当パスのみを
+  // 書き換える（レコード単位）。それ以外のモードでは全体を書き直す従来方式のまま。
+  function persistAdd(kind, record){
+    if(storageMode === "realtime"){
+      const clone = Object.assign({}, record);
+      delete clone.id;
+      return window.firebaseSync.writeRecord(HOUSEHOLD_ID, kind, record.id, clone).then(function(){
+        flashSaved();
+      }).catch(function(e){
+        console.error("リアルタイム保存に失敗したため、この端末内保存に切り替えます:", e);
+        storageMode = "local";
+        data[kind].push(record);
+        return saveData();
+      });
+    }
+    data[kind].push(record);
+    return saveData();
+  }
+
+  function persistDelete(kind, id){
+    if(storageMode === "realtime"){
+      return window.firebaseSync.deleteRecord(HOUSEHOLD_ID, kind, id).then(function(){
+        flashSaved();
+      }).catch(function(e){
+        console.error("リアルタイム削除に失敗したため、この端末内保存に切り替えます:", e);
+        storageMode = "local";
+        data[kind] = data[kind].filter(function(x){ return x.id !== id; });
+        return saveData();
+      });
+    }
+    data[kind] = data[kind].filter(function(x){ return x.id !== id; });
+    return saveData();
+  }
+
 
   // ---------- Export / Import (端末間でデータをまとめる) ----------
   function exportData(){
@@ -353,36 +533,49 @@
   }
 
   function mergeIncoming(parsed){
-    let added = 0;
-    ["incomes","expenses","savings"].forEach(k=>{
-      const existingIds = new Set(data[k].map(x=>x.id));
-      (parsed[k] || []).forEach(item=>{
+    const addedRecords = []; // [{kind, record}]
+    ["incomes","expenses","savings"].forEach(function(k){
+      const existingIds = new Set(data[k].map(function(x){ return x.id; }));
+      (parsed[k] || []).forEach(function(item){
         if(item && item.id && !existingIds.has(item.id)){
           data[k].push(item);
           existingIds.add(item.id);
-          added++;
+          addedRecords.push({kind: k, record: item});
         }
       });
     });
-    return added;
+    return addedRecords;
   }
 
   function importDataFromFile(file){
     const reader = new FileReader();
     reader.onload = function(){
-      let parsed, added;
+      let parsed, addedRecords;
       try{
         parsed = JSON.parse(reader.result);
-        added = mergeIncoming(parsed);
+        addedRecords = mergeIncoming(parsed);
       }catch(e){
         console.error(e);
         alert("ファイルの読み込みに失敗しました。書き出し機能で作成したファイルを選択してください。");
         return;
       }
-      saveData().then(function(){
+      let savePromise;
+      if(storageMode === "realtime" && addedRecords.length){
+        // レコードごとにFirebaseへ書き込む（1件ずつ順番に処理する）
+        savePromise = addedRecords.reduce(function(chain, item){
+          return chain.then(function(){
+            const clone = Object.assign({}, item.record);
+            delete clone.id;
+            return window.firebaseSync.writeRecord(HOUSEHOLD_ID, item.kind, item.record.id, clone);
+          });
+        }, Promise.resolve());
+      }else{
+        savePromise = saveData();
+      }
+      savePromise.then(function(){
         render();
         renderTabs();
-        alert(added > 0 ? (added + "件のデータを取り込みました。") : "新しく取り込めるデータはありませんでした（すでに同じ内容が登録されています）。");
+        alert(addedRecords.length > 0 ? (addedRecords.length + "件のデータを取り込みました。") : "新しく取り込めるデータはありませんでした（すでに同じ内容が登録されています）。");
       });
     };
     reader.readAsText(file);
@@ -427,10 +620,12 @@
       </div>
       <div class="mode-banner">
         <div class="mode-text">
-          <span class="mode-dot ${isCloud ? "cloud" : "local"}"></span>
-          ${isCloud
+          <span class="mode-dot ${storageMode === "local" ? "local" : "cloud"}"></span>
+          ${storageMode === "cloud"
             ? "共有保存中：夫婦どちらの端末からもこのデータを確認できます"
-            : "この端末にのみ保存中：もう一方の端末と合わせるには「書き出す／読み込む」をご利用ください"}
+            : storageMode === "realtime"
+              ? "リアルタイム共有中：入力するとすぐに夫婦の端末に反映されます"
+              : "この端末にのみ保存中：もう一方の端末と合わせるには「書き出す／読み込む」をご利用ください"}
         </div>
         <div class="mode-actions">
           <button class="ghost-btn" id="exportBtn">書き出す</button>
@@ -438,6 +633,7 @@
           <input type="file" id="importFile" accept="application/json" style="display:none">
         </div>
       </div>
+      ${storageMode === "realtime" ? `<p class="hint" style="margin-top:-12px;">書き出す／読み込むは、リアルタイム共有中は基本的に不要です（バックアップ用途にのみお使いください）。</p>` : ""}
       <div class="tabs">
         <button class="tab-btn" data-tab="income">収入</button>
         <button class="tab-btn" data-tab="expense">支出</button>
@@ -518,11 +714,11 @@
     el("inc-add").onclick = function(){
       const amount = parseFloat(el("inc-amount").value);
       if(!amount || amount <= 0){ el("inc-amount").focus(); return; }
-      data.incomes.push({
+      const record = {
         id: uid(), date: el("inc-date").value || todayStr(),
-        category: el("inc-cat").value, memo: el("inc-memo").value.trim(), amount
-      });
-      saveData().then(function(){
+        category: el("inc-cat").value, memo: el("inc-memo").value.trim(), amount: amount
+      };
+      persistAdd("incomes", record).then(function(){
         renderIncomePanel(); renderDashboardPanel();
       });
     };
@@ -530,7 +726,7 @@
   }
 
   // ---------- Expense ----------
-  function expenseTable(type, cats, title, hint){
+  function expenseTable(type, cats, title, shortLabel, hint){
     const monthly = data.expenses.filter(e=>inMonth(e.date) && e.type===type);
     const rows = monthly.slice().sort((a,b)=> b.date.localeCompare(a.date)).map(e=>{
       const cat = cats.find(c=>c.key===e.category) || {color:"#999"};
@@ -559,8 +755,8 @@
         <div class="table-scroll"><table>
           <thead><tr><th>日付</th><th>カテゴリー</th><th>メモ</th><th style="text-align:right">金額</th><th></th></tr></thead>
           <tbody>
-            ${rows || `<tr><td colspan="5" class="empty-row">${monthLabel(currentMonth)}の${title}はまだ記録されていません</td></tr>`}
-            ${monthly.length ? `<tr class="subtotal-row"><td colspan="3">${title}合計</td><td class="amt">${yen(total)}</td><td></td></tr>` : ""}
+            ${rows || `<tr><td colspan="5" class="empty-row">${monthLabel(currentMonth)}の${shortLabel}はまだ記録されていません</td></tr>`}
+            ${monthly.length ? `<tr class="subtotal-row"><td colspan="3">${shortLabel}合計</td><td class="amt">${yen(total)}</td><td></td></tr>` : ""}
           </tbody>
         </table></div>
       </div>
@@ -569,8 +765,8 @@
 
   function renderExpensePanel(){
     el("panel-expense").innerHTML =
-      expenseTable("fixed", FIXED_CATS, "固定費を入力する", "毎月ほぼ一定額かかる支出です（家賃・住宅ローン、光熱費、通信費、保険料、サブスクなど）。") +
-      expenseTable("variable", VARIABLE_CATS, "変動費を入力する", "月によって金額が変わる支出です（食費、日用品、医療費、交通費、被服費、交際費、娯楽費、教育費など）。");
+      expenseTable("fixed", FIXED_CATS, "固定費を入力する", "固定費", "毎月ほぼ一定額かかる支出です（家賃・住宅ローン、光熱費、通信費、保険料、サブスクなど）。") +
+      expenseTable("variable", VARIABLE_CATS, "変動費を入力する", "変動費", "月によって金額が変わる支出です（食費、日用品、医療費、交通費、被服費、交際費、娯楽費、教育費など）。");
 
     each(document.querySelectorAll(".ex-add"), function(btn){
       btn.onclick = function(){
@@ -578,14 +774,14 @@
         const form = btn.closest(".entry-form");
         const amount = parseFloat(form.querySelector(".ex-amount").value);
         if(!amount || amount <= 0){ form.querySelector(".ex-amount").focus(); return; }
-        data.expenses.push({
+        const record = {
           id: uid(), type: type,
           date: form.querySelector(".ex-date").value || todayStr(),
           category: form.querySelector(".ex-cat").value,
           memo: form.querySelector(".ex-memo").value.trim(),
           amount: amount
-        });
-        saveData().then(function(){
+        };
+        persistAdd("expenses", record).then(function(){
           renderExpensePanel(); renderDashboardPanel();
         });
       };
@@ -633,11 +829,11 @@
     el("sav-add").onclick = function(){
       const amount = parseFloat(el("sav-amount").value);
       if(!amount || amount <= 0){ el("sav-amount").focus(); return; }
-      data.savings.push({
+      const record = {
         id: uid(), date: el("sav-date").value || todayStr(),
-        category: el("sav-cat").value, memo: el("sav-memo").value.trim(), amount
-      });
-      saveData().then(function(){
+        category: el("sav-cat").value, memo: el("sav-memo").value.trim(), amount: amount
+      };
+      persistAdd("savings", record).then(function(){
         renderSavingPanel(); renderDashboardPanel();
       });
     };
@@ -649,8 +845,7 @@
     each(el(panelId).querySelectorAll(".del"), function(btn){
       btn.onclick = function(){
         const kind = btn.dataset.kind, id = btn.dataset.id;
-        data[kind] = data[kind].filter(function(x){ return x.id !== id; });
-        saveData().then(function(){
+        persistDelete(kind, id).then(function(){
           renderIncomePanel(); renderExpensePanel(); renderSavingPanel(); renderDashboardPanel();
         });
       };
@@ -807,6 +1002,21 @@
       '<button onclick="location.reload()">再読み込みする</button></div>';
   }
 
+  // 画面幅は@media(CSS)で自動判定しているが、それに加えて「タッチで操作しているか」も
+  // 判定し、該当する場合は<html>にis-touchクラスを付与してタップ領域を広げる。
+  // ユーザーエージェント文字列の判定は機種偽装等で誤判定しやすいため使わず、
+  // 実際の入力方式（ポインターの種類）で判定している。
+  function applyDeviceClass(){
+    try{
+      const isTouch = (window.matchMedia && window.matchMedia("(pointer: coarse)").matches)
+        || ("ontouchstart" in window)
+        || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0);
+      document.documentElement.classList.toggle("is-touch", !!isTouch);
+    }catch(e){
+      console.log("デバイス判定に失敗しました（表示には影響しません）:", e);
+    }
+  }
+
   function init(){
     try{
       loadData().then(function(){
@@ -822,7 +1032,19 @@
       showFatalError();
     }
   }
-  init();
+  function bootstrap(){
+    applyDeviceClass();
+    init();
+  }
+  // Firebase用の<script type="module">は、HTML解析が完了してから実行される仕様のため、
+  // このスクリプト（type指定なしの通常スクリプト）の方が先に実行されてしまうことがある。
+  // window.firebaseSyncの設定が間に合うよう、DOMContentLoaded（読み込み完了）を待ってから
+  // 初期化する。
+  if(document.readyState === "loading"){
+    document.addEventListener("DOMContentLoaded", bootstrap);
+  }else{
+    bootstrap();
+  }
 })();
 </script>
 </body>
