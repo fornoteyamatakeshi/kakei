@@ -121,6 +121,16 @@
     /* 長い選択肢（例：子供NISA（ジュニアNISA））でもグリッド枠からはみ出さないように */
     text-overflow:ellipsis;
   }
+  input[type="date"]{
+    /* 日付入力欄はブラウザ標準のカレンダーアイコン等を含むため、内側の余白を
+       やや控えめにし、スマートフォンでの表示がカードの外にはみ出さないようにする */
+    padding:9px 6px;
+    min-width:0;
+  }
+  input[type="date"]::-webkit-calendar-picker-indicator{
+    margin-left:2px;
+    padding:0;
+  }
   input:focus,select:focus{outline:2px solid var(--indigo);outline-offset:1px;}
   .add-btn{
     background:var(--indigo-deep);color:#fff;border:none;border-radius:8px;
@@ -211,9 +221,20 @@
   }
   .ghost-btn:hover{background:#EFE7D4;}
 
+  /* 接続切れの警告バナー（リアルタイム共有モードで、接続が一度切れた場合のみ表示） */
+  .disconnect-banner{
+    display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+    background:#FBF0EC;border:1px solid var(--danger);border-radius:12px;
+    padding:10px 14px;margin:-8px 0 18px;font-size:12.5px;color:var(--danger);
+  }
+  .disconnect-banner .ghost-btn{color:var(--danger);border-color:var(--danger);}
+
   @media (max-width:720px){
     .entry-form,.entry-form.with-cat{grid-template-columns:1fr 1fr;}
     .add-btn{grid-column:1/-1;}
+    /* 日付欄はブラウザ標準のカレンダー部品を含み、他の項目と1行を分け合うと
+       窮屈になりやすいため、2列レイアウトの間も常に1行を専有させる */
+    .field-date{grid-column:1/-1;}
     .stat-grid{grid-template-columns:1fr 1fr;}
     .charts,.breakdown{grid-template-columns:1fr;}
   }
@@ -294,6 +315,18 @@
       },
       deleteRecord: function(householdId, kind, id){
         return remove(ref(db, "households/" + householdId + "/" + kind + "/" + id));
+      },
+      // Firebase専用の特別なパス「.info/connected」を購読すると、
+      // 今まさにサーバーへ接続できているかどうかが分かる。
+      // これを使って「今は最新の状態と繋がっているか」を画面に表示する。
+      watchConnection: function(onChange){
+        try{
+          onValue(ref(db, ".info/connected"), function(snapshot){
+            onChange(!!snapshot.val());
+          });
+        }catch(e){
+          console.log("接続状態の監視に失敗しました:", e);
+        }
       }
     };
   }catch(e){
@@ -416,6 +449,7 @@
         clearTimeout(timeoutId);
         storageMode = "realtime";
         applyFirebaseSnapshot(val);
+        startConnectionWatch();
         resolve();
       }else{
         // 2回目以降の呼び出し＝自分または相手の端末での変更がリアルタイムに届いたもの
@@ -430,6 +464,29 @@
       console.log("リアルタイム共有への接続に失敗したため、この端末内保存に切り替えます:", err);
       loadLocalFallback();
       resolve();
+    });
+  }
+
+  // 接続状態の監視（「相手の更新が届いているか」をユーザーが確認できるようにする）。
+  // 初回接続後に一度でも接続が切れたら、connectionLost=true にして再読み込みを促す。
+  // 切断直後の一瞬の揺らぎで警告が出ないよう、少し待ってから判定する。
+  let connectionLost = false;
+  let hasConnectedOnce = false;
+  function startConnectionWatch(){
+    if(!(window.firebaseSync && window.firebaseSync.watchConnection)) return;
+    window.firebaseSync.watchConnection(function(isConnected){
+      if(isConnected){
+        hasConnectedOnce = true;
+        if(connectionLost){
+          connectionLost = false;
+          render();
+          renderTabs();
+        }
+      }else if(hasConnectedOnce){
+        connectionLost = true;
+        render();
+        renderTabs();
+      }
     });
   }
 
@@ -634,6 +691,11 @@
         </div>
       </div>
       ${storageMode === "realtime" ? `<p class="hint" style="margin-top:-12px;">書き出す／読み込むは、リアルタイム共有中は基本的に不要です（バックアップ用途にのみお使いください）。</p>` : ""}
+      ${(storageMode === "realtime" && connectionLost) ? `
+      <div class="disconnect-banner">
+        <span>🔌 接続が切れたようです。相手の更新がまだ反映されていない可能性があります。</span>
+        <button class="ghost-btn" id="reconnectBtn">再読み込みする</button>
+      </div>` : ""}
       <div class="tabs">
         <button class="tab-btn" data-tab="income">収入</button>
         <button class="tab-btn" data-tab="expense">支出</button>
@@ -654,6 +716,9 @@
       if(file) importDataFromFile(file);
       e.target.value = "";
     };
+    if(el("reconnectBtn")){
+      el("reconnectBtn").onclick = function(){ location.reload(); };
+    }
     each(document.querySelectorAll(".tab-btn"), function(b){
       b.onclick = function(){ activeTab = b.dataset.tab; renderTabs(); };
     });
@@ -694,7 +759,7 @@
         <h2>収入を入力する</h2>
         <p class="hint">夫・妻・臨時収入・役所からの収入（児童手当や給付金など）を分けて記録できます。</p>
         <div class="entry-form with-cat" id="incomeForm">
-          <div class="field"><label>日付</label><input type="date" id="inc-date" value="${todayStr()}"></div>
+          <div class="field field-date"><label>日付</label><input type="date" id="inc-date" value="${todayStr()}"></div>
           <div class="field"><label>区分</label>
             <select id="inc-cat">${INCOME_CATS.map(c=>`<option value="${c.key}">${c.label}</option>`).join("")}</select>
           </div>
@@ -744,7 +809,7 @@
         <h2>${title}</h2>
         <p class="hint">${hint}</p>
         <div class="entry-form with-cat" data-type="${type}">
-          <div class="field"><label>日付</label><input type="date" class="ex-date" value="${todayStr()}"></div>
+          <div class="field field-date"><label>日付</label><input type="date" class="ex-date" value="${todayStr()}"></div>
           <div class="field"><label>カテゴリー</label>
             <select class="ex-cat">${cats.map(c=>`<option value="${c.key}">${c.key}</option>`).join("")}</select>
           </div>
@@ -809,7 +874,7 @@
         <h2>貯金・資産形成を入力する</h2>
         <p class="hint">普通の貯金に加えて、NISA・子供NISA（ジュニアNISA）・iDeCoへの積立も分けて記録できます。将来始めた場合も同じ画面で追加できます。</p>
         <div class="entry-form with-cat" id="savingForm">
-          <div class="field"><label>日付</label><input type="date" id="sav-date" value="${todayStr()}"></div>
+          <div class="field field-date"><label>日付</label><input type="date" id="sav-date" value="${todayStr()}"></div>
           <div class="field"><label>区分</label>
             <select id="sav-cat">${SAVING_CATS.map(c=>`<option value="${c.key}">${c.label}</option>`).join("")}</select>
           </div>
