@@ -130,6 +130,22 @@
   input[type="date"]::-webkit-calendar-picker-indicator{
     margin-left:2px;
     padding:0;
+    width:16px;
+    height:16px;
+    flex:0 0 16px;
+  }
+  input[type="date"]::-webkit-datetime-edit{
+    min-width:0;
+    padding:0;
+  }
+  input[type="date"]::-webkit-date-and-time-value{
+    min-width:0;
+    text-align:left;
+  }
+  input[type="date"]{
+    overflow:hidden;
+    text-overflow:clip;
+    white-space:nowrap;
   }
   input:focus,select:focus{outline:2px solid var(--indigo);outline-offset:1px;}
   .add-btn{
@@ -246,6 +262,8 @@
     .wrap{padding:16px 12px 70px;}
     .app-header{flex-wrap:wrap;gap:10px;}
     .entry-form,.entry-form.with-cat{grid-template-columns:1fr;}
+    .field-date{grid-column:1;width:100%;min-width:0;}
+    .field-date input[type="date"]{width:100%;max-width:100%;min-width:0;}
     .add-btn{grid-column:1;width:100%;}
     .stat-grid{grid-template-columns:1fr;}
     .card{padding:16px;}
@@ -260,9 +278,6 @@
      付与して判定している（画面幅だけでなく入力方式でも判定するため）。 */
   .is-touch .add-btn,.is-touch .ghost-btn,.is-touch .tab-btn{min-height:40px;}
   .is-touch .del{min-width:32px;min-height:32px;display:inline-flex;align-items:center;justify-content:center;}
-
-  /* PDF出力ボタンを目立たせるためのカード枠（通常の画面表示用） */
-  .print-card{border:1px dashed var(--indigo);background:#F2F6FA;}
 </style>
 </head>
 <body>
@@ -590,182 +605,6 @@
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-  }
-
-  // ---------- 月次レポートのPDF出力（印刷） ----------
-  // 外部のPDF作成ライブラリを使わず、ブラウザ標準の「印刷」機能（window.print）と
-  // 印刷専用のスタイル（@media print）を組み合わせて実現している。
-  // 「PDF出力する」ボタンを押すと印刷ダイアログが開き、そこで「PDFに保存」を
-  // 選ぶことでPDFファイルとしてダウンロード・保存できる（スマートフォンでも同様）。
-  function detailRows(list, categoryLabelFn){
-    if(!list.length) return `<tr><td colspan="4" class="print-empty">記録がありません</td></tr>`;
-    return list.slice().sort(function(a,b){ return a.date.localeCompare(b.date); }).map(function(x){
-      return `<tr>
-        <td>${x.date}</td>
-        <td>${escapeHtml(categoryLabelFn(x))}</td>
-        <td>${escapeHtml(x.memo || "")}</td>
-        <td class="amt">${yen(x.amount)}</td>
-      </tr>`;
-    }).join("");
-  }
-
-  function buildPrintReportHTML(){
-    const incomes = data.incomes.filter(function(i){ return inMonth(i.date); });
-    const fixed = data.expenses.filter(function(e){ return inMonth(e.date) && e.type === "fixed"; });
-    const variable = data.expenses.filter(function(e){ return inMonth(e.date) && e.type === "variable"; });
-    const savings = data.savings.filter(function(s){ return inMonth(s.date); });
-
-    const totalIncome = incomes.reduce(function(s,i){ return s+i.amount; }, 0);
-    const totalFixed = fixed.reduce(function(s,i){ return s+i.amount; }, 0);
-    const totalVariable = variable.reduce(function(s,i){ return s+i.amount; }, 0);
-    const totalExpense = totalFixed + totalVariable;
-    const totalSaving = savings.reduce(function(s,i){ return s+i.amount; }, 0);
-    const balance = totalIncome - totalExpense - totalSaving;
-    const savingRate = totalIncome > 0 ? Math.round((totalSaving/totalIncome)*100) : 0;
-
-    const incomeLabel = function(x){ const c = INCOME_CATS.find(function(c){ return c.key===x.category; }); return c ? c.label : x.category; };
-    const savingLabel = function(x){ const c = SAVING_CATS.find(function(c){ return c.key===x.category; }); return c ? c.label : x.category; };
-    const plainLabel = function(x){ return x.category; };
-
-    const printedAt = new Date();
-    const printedAtStr = printedAt.getFullYear() + "年" + (printedAt.getMonth()+1) + "月" + printedAt.getDate() + "日";
-
-    return `
-      <h1>ふたり家計簿　月次レポート</h1>
-      <p class="print-sub">対象月：${monthLabel(currentMonth)}　／　作成日：${printedAtStr}</p>
-
-      <table class="print-summary">
-        <tr>
-          <td class="print-summary-label">収入合計</td><td class="print-summary-value">${yen(totalIncome)}</td>
-          <td class="print-summary-label">支出合計（固定+変動）</td><td class="print-summary-value">${yen(totalExpense)}</td>
-        </tr>
-        <tr>
-          <td class="print-summary-label">貯金・積立合計</td><td class="print-summary-value">${yen(totalSaving)}</td>
-          <td class="print-summary-label">収支残高</td><td class="print-summary-value">${yen(balance)}</td>
-        </tr>
-        <tr>
-          <td class="print-summary-label">貯蓄率</td><td class="print-summary-value">${savingRate}%</td>
-          <td class="print-summary-label">固定費／変動費</td><td class="print-summary-value">${yen(totalFixed)} ／ ${yen(totalVariable)}</td>
-        </tr>
-      </table>
-
-      <h2>収入明細</h2>
-      <table>
-        <thead><tr><th>日付</th><th>区分</th><th>メモ</th><th class="amt">金額</th></tr></thead>
-        <tbody>
-          ${detailRows(incomes, incomeLabel)}
-          <tr class="print-subtotal"><td colspan="3">収入合計</td><td class="amt">${yen(totalIncome)}</td></tr>
-        </tbody>
-      </table>
-
-      <h2>固定費明細</h2>
-      <table>
-        <thead><tr><th>日付</th><th>カテゴリー</th><th>メモ</th><th class="amt">金額</th></tr></thead>
-        <tbody>
-          ${detailRows(fixed, plainLabel)}
-          <tr class="print-subtotal"><td colspan="3">固定費合計</td><td class="amt">${yen(totalFixed)}</td></tr>
-        </tbody>
-      </table>
-
-      <h2>変動費明細</h2>
-      <table>
-        <thead><tr><th>日付</th><th>カテゴリー</th><th>メモ</th><th class="amt">金額</th></tr></thead>
-        <tbody>
-          ${detailRows(variable, plainLabel)}
-          <tr class="print-subtotal"><td colspan="3">変動費合計</td><td class="amt">${yen(totalVariable)}</td></tr>
-        </tbody>
-      </table>
-
-      <h2>貯金・資産形成明細</h2>
-      <table>
-        <thead><tr><th>日付</th><th>区分</th><th>メモ</th><th class="amt">金額</th></tr></thead>
-        <tbody>
-          ${detailRows(savings, savingLabel)}
-          <tr class="print-subtotal"><td colspan="3">貯金・積立合計</td><td class="amt">${yen(totalSaving)}</td></tr>
-        </tbody>
-      </table>
-
-      <p class="print-footer">ふたり家計簿アプリより出力（${printedAtStr}作成）。この用紙は家庭内の記録・保管を目的としたものです。</p>
-    `;
-  }
-
-  // 印刷専用の見た目を定義するCSS。メインのアプリ画面には影響させず、
-  // 印刷用に読み込む別文書（iframe）の中だけに適用する。
-  const PRINT_ONLY_CSS = `
-    @page{ margin:14mm; }
-    *{ box-sizing:border-box; }
-    body{
-      margin:0;color:#1a1a1a;background:#fff;
-      font-family:"Hiragino Kaku Gothic ProN","Hiragino Sans","Yu Gothic Medium","YuGothic","Meiryo",sans-serif;
-    }
-    h1{font-size:19px;margin:0 0 4px;color:#16304D;}
-    .print-sub{font-size:11px;color:#555;margin:0 0 14px;}
-    h2{font-size:14px;color:#16304D;border-left:4px solid #C99A3E;padding-left:8px;margin:18px 0 8px;}
-    table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:4px;}
-    th{text-align:left;border-bottom:1px solid #999;padding:4px 6px;background:#F3F1EA;}
-    td{border-bottom:1px solid #ddd;padding:4px 6px;}
-    td.amt,th.amt{text-align:right;font-variant-numeric:tabular-nums;}
-    tr.print-subtotal td{font-weight:700;border-top:1px solid #999;border-bottom:2px solid #16304D;}
-    .print-summary{width:100%;border-collapse:collapse;margin-bottom:6px;}
-    .print-summary td{border:1px solid #999;padding:8px 10px;font-size:12px;}
-    .print-summary td.print-summary-label{color:#555;font-size:10.5px;}
-    .print-summary td.print-summary-value{font-size:15px;font-weight:700;text-align:right;}
-    .print-empty{color:#777;font-size:10.5px;padding:6px 0;}
-    .print-footer{margin-top:20px;font-size:9.5px;color:#777;border-top:1px solid #ccc;padding-top:6px;}
-  `;
-
-  // 外部のPDF作成ライブラリを使わず、ブラウザ標準の「印刷」機能（window.print）と、
-  // レポート専用の内容だけを持つ隠しiframeを組み合わせて実現している。
-  // メインの画面（フォームやタブなど）を印刷対象から隠す方式ではなく、
-  // 印刷したい内容だけを持つ別の文書を新たに作ってそれを印刷するため、
-  // 端末やブラウザによる表示崩れが起きにくい。
-  // 「PDF出力する」ボタンを押すと印刷ダイアログが開き、そこで送信先として
-  // 「PDFに保存」を選ぶことでPDFファイルとしてダウンロード・保存できる
-  // （スマートフォンでも同様。iPhoneは共有シートの「PDFを作成」から保存できる）。
-  function exportMonthlyPDF(){
-    const reportHTML = buildPrintReportHTML();
-    const doc = "<!DOCTYPE html><html lang=\"ja\"><head><meta charset=\"UTF-8\">"
-      + "<title>ふたり家計簿レポート</title><style>" + PRINT_ONLY_CSS + "</style></head>"
-      + "<body>" + reportHTML + "</body></html>";
-
-    const iframe = document.createElement("iframe");
-    iframe.style.position = "fixed";
-    iframe.style.right = "0";
-    iframe.style.bottom = "0";
-    iframe.style.width = "0";
-    iframe.style.height = "0";
-    iframe.style.border = "0";
-    iframe.setAttribute("aria-hidden", "true");
-    document.body.appendChild(iframe);
-
-    function cleanup(){
-      if(iframe.parentNode){ iframe.parentNode.removeChild(iframe); }
-    }
-
-    try{
-      const idoc = iframe.contentWindow.document;
-      idoc.open();
-      idoc.write(doc);
-      idoc.close();
-    }catch(e){
-      console.error("PDF出力用の文書を作成できませんでした:", e);
-      cleanup();
-      alert("PDF出力の準備に失敗しました。お使いのブラウザで再度お試しください。");
-      return;
-    }
-
-    // iframe内の文書の読み込み・レイアウト確定を少し待ってから印刷する
-    setTimeout(function(){
-      try{
-        iframe.contentWindow.focus();
-        iframe.contentWindow.print();
-      }catch(e){
-        console.error("印刷の呼び出しに失敗しました:", e);
-        alert("印刷ダイアログを開けませんでした。お使いのブラウザで再度お試しください。");
-      }
-      // 印刷ダイアログを閉じた後も参照できるよう、少し長めに待ってから片付ける
-      setTimeout(cleanup, 2000);
-    }, 250);
   }
 
   function mergeIncoming(parsed){
@@ -1134,11 +973,6 @@
         <div class="stat saving"><div class="label">貯金・積立合計</div><div class="value">${yen(totalSaving)}</div></div>
         <div class="stat balance"><div class="label">収支（残り）</div><div class="value">${yen(balance)}</div></div>
       </div>
-      <div class="card print-card">
-        <h2>この月の記録をPDFで出力する</h2>
-        <p class="hint">${monthLabel(currentMonth)}分の収支サマリーと明細を、印刷・保管しやすい1枚のレポートにまとめて出力します。毎週・毎月の記録用にご利用ください。</p>
-        <button class="add-btn" id="pdfExportBtn">🖨️ ${monthLabel(currentMonth)}のレポートをPDF出力する</button>
-      </div>
       <div class="card">
         <h2>${monthLabel(currentMonth)}の収支バランス <span style="font-size:12px;color:var(--ink-soft);font-weight:400;">貯蓄率 ${savingRate}%</span></h2>
         <div class="charts">
@@ -1168,9 +1002,6 @@
     // stash breakdown for chart drawing
     renderDashboardPanel._ctx = {totalIncome, totalFixed, totalVariable, totalSaving, balance, fixedBd, variableBd};
     if(activeTab === "dashboard") drawCharts();
-    if(el("pdfExportBtn")){
-      el("pdfExportBtn").onclick = exportMonthlyPDF;
-    }
   }
 
   // 外部グラフライブラリを使わず、SVGだけで棒グラフ・ドーナツグラフを描画する。
