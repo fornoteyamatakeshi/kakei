@@ -122,14 +122,17 @@
     text-overflow:ellipsis;
   }
   input[type="date"]{
-    /* 日付入力欄はブラウザ標準のカレンダーアイコン等を含むため、内側の余白を
-       やや控えめにし、スマートフォンでの表示がカードの外にはみ出さないようにする */
-    padding:9px 6px;
+    /* iOS Safariのdate入力は、標準の内部コントロールが
+       CSS上の幅より大きく扱われる場合があるため、明示的に
+       幅・高さ・最小幅を固定して親要素内に収める。 */
+    width:100%;
+    max-width:100%;
     min-width:0;
-  }
-  input[type="date"]::-webkit-calendar-picker-indicator{
-    margin-left:2px;
-    padding:0;
+    height:42px;
+    padding:8px 6px;
+    box-sizing:border-box;
+    -webkit-appearance:none;
+    appearance:none;
   }
   input:focus,select:focus{outline:2px solid var(--indigo);outline-offset:1px;}
   .add-btn{
@@ -245,7 +248,9 @@
   @media (max-width:480px){
     .wrap{padding:16px 12px 70px;}
     .app-header{flex-wrap:wrap;gap:10px;}
-    .entry-form,.entry-form.with-cat{grid-template-columns:1fr;}
+    .entry-form,.entry-form.with-cat{grid-template-columns:minmax(0,1fr);}
+    .field,.field-date{width:100%;min-width:0;}
+    .field-date input[type="date"]{width:100%;min-width:0;max-width:100%;}
     .add-btn{grid-column:1;width:100%;}
     .stat-grid{grid-template-columns:1fr;}
     .card{padding:16px;}
