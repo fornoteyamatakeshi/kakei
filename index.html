@@ -121,43 +121,48 @@
     /* 長い選択肢（例：子供NISA（ジュニアNISA））でもグリッド枠からはみ出さないように */
     text-overflow:ellipsis;
   }
-  /* 日付入力：iOS Safari の内部部品が入力欄の幅を押し広げる問題への対策 */
+  /*
+     日付入力は iOS Safari で通常の input と異なり、ネイティブの
+     日付コントロールが独自の最小幅を持つことがある。
+     そのため「width:100%」だけでは、親要素より右側にはみ出す場合がある。
+     appearance を通常の input と同じにし、WebKit 内部の部品も幅を制限する。
+     タップ時のネイティブ日付ピッカー自体は type="date" のまま利用できる。
+  */
   input[type="date"]{
-    width:100%;
-    min-width:0;
-    max-width:100%;
-    min-inline-size:0;
-    box-sizing:border-box;
+    -webkit-appearance:none;
+    appearance:none;
     display:block;
-    padding:9px 4px;
-    overflow:hidden;
-    text-overflow:clip;
-    white-space:nowrap;
-    -webkit-appearance:auto;
-    appearance:auto;
-  }
-  /* WebKit系（iPhone/iPad Safari）の日付フィールド内部を明示的に縮める */
-  input[type="date"]::-webkit-datetime-edit,
-  input[type="date"]::-webkit-datetime-edit-fields-wrapper{
-    min-width:0;
-    max-width:100%;
-    padding:0;
-    margin:0;
-  }
-  input[type="date"]::-webkit-date-and-time-value{
-    min-width:0;
-    max-width:100%;
     width:100%;
+    min-width:0;
+    max-width:100%;
+    inline-size:100%;
+    min-inline-size:0;
+    max-inline-size:100%;
+    padding:9px 10px;
+    overflow:hidden;
+    box-sizing:border-box;
+  }
+  input[type="date"]::-webkit-datetime-edit,
+  input[type="date"]::-webkit-datetime-edit-fields-wrapper,
+  input[type="date"]::-webkit-date-and-time-value{
+    width:100%;
+    min-width:0;
+    max-width:100%;
     margin:0;
     padding:0;
-    text-align:left;
+    box-sizing:border-box;
   }
   input[type="date"]::-webkit-calendar-picker-indicator{
-    flex:0 0 auto;
-    width:18px;
-    height:18px;
-    margin:0 0 0 2px;
-    padding:0;
+    display:none;
+  }
+  @supports (-webkit-touch-callout:none){
+    input[type="date"]{
+      -webkit-appearance:none;
+      appearance:none;
+      width:100%;
+      min-width:0;
+      max-width:100%;
+    }
   }
   input:focus,select:focus{outline:2px solid var(--indigo);outline-offset:1px;}
   .add-btn{
@@ -272,20 +277,11 @@
      自動的にこのレイアウトへ切り替わる（機種の判定ではなく画面幅で判定）。 */
   @media (max-width:480px){
     .wrap{padding:16px 12px 70px;}
-    /* iPhone等で日付入力の内部表示がグリッド幅を超えないように、
-       フィールドと入力要素の幅を同じ基準で固定する */
-    .field-date{
-      width:100%;
-      min-width:0;
-      max-width:100%;
-    }
-    .field-date input[type="date"]{
-      width:100%;
-      min-width:0;
-      max-width:100%;
-    }
     .app-header{flex-wrap:wrap;gap:10px;}
-    .entry-form,.entry-form.with-cat{grid-template-columns:1fr;}
+    .entry-form,.entry-form.with-cat{grid-template-columns:minmax(0,1fr);}
+    .field{width:100%;min-width:0;max-width:100%;}
+    .field-date{grid-column:1;width:100%;min-width:0;max-width:100%;}
+    .field-date input[type="date"]{width:100%;min-width:0;max-width:100%;}
     .add-btn{grid-column:1;width:100%;}
     .stat-grid{grid-template-columns:1fr;}
     .card{padding:16px;}
