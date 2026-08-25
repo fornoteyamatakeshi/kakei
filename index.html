@@ -121,41 +121,14 @@
     /* 長い選択肢（例：子供NISA（ジュニアNISA））でもグリッド枠からはみ出さないように */
     text-overflow:ellipsis;
   }
-  /* 日付入力はSafari/WebKitのネイティブ部品が通常のinputより大きく
-     計算される場合があるため、外側・内側の両方を明示的に幅制御する */
   input[type="date"]{
-    -webkit-appearance:none;
-    appearance:none;
-    display:block;
-    width:100%;
-    inline-size:100%;
+    /* 日付入力欄はブラウザ標準のカレンダーアイコン等を含むため、内側の余白を
+       やや控えめにし、スマートフォンでの表示がカードの外にはみ出さないようにする */
+    padding:9px 6px;
     min-width:0;
-    min-inline-size:0;
-    max-width:100%;
-    max-inline-size:100%;
-    box-sizing:border-box;
-    padding:9px 10px;
-    margin:0;
-    overflow:hidden;
-  }
-  input[type="date"]::-webkit-datetime-edit,
-  input[type="date"]::-webkit-datetime-edit-fields-wrapper,
-  input[type="date"]::-webkit-date-and-time-value{
-    min-width:0;
-    width:100%;
-    max-width:100%;
-    min-inline-size:0;
-    max-inline-size:100%;
-    box-sizing:border-box;
-    padding:0;
-    margin:0;
   }
   input[type="date"]::-webkit-calendar-picker-indicator{
-    flex:0 0 18px;
-    width:18px;
-    min-width:18px;
-    max-width:18px;
-    margin:0;
+    margin-left:2px;
     padding:0;
   }
   input:focus,select:focus{outline:2px solid var(--indigo);outline-offset:1px;}
@@ -272,28 +245,7 @@
   @media (max-width:480px){
     .wrap{padding:16px 12px 70px;}
     .app-header{flex-wrap:wrap;gap:10px;}
-    .entry-form,.entry-form.with-cat{
-      grid-template-columns:minmax(0,1fr);
-      width:100%;
-      min-width:0;
-      max-width:100%;
-    }
-    .field{
-      width:100%;
-      min-width:0;
-      max-width:100%;
-    }
-    .field-date{
-      grid-column:1;
-      width:100%;
-      min-width:0;
-      max-width:100%;
-    }
-    .field-date input[type="date"]{
-      width:100%;
-      min-width:0;
-      max-width:100%;
-    }
+    .entry-form,.entry-form.with-cat{grid-template-columns:1fr;}
     .add-btn{grid-column:1;width:100%;}
     .stat-grid{grid-template-columns:1fr;}
     .card{padding:16px;}
