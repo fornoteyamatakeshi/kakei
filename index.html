@@ -323,6 +323,26 @@
   .print-card{border:1px dashed var(--indigo);background:#F2F6FA;}
   .print-card .add-btn:disabled{opacity:.6;cursor:default;}
 
+  /* レシート読み取り機能 */
+  .receipt-card{border:1px dashed var(--saving);background:#FBF6E9;}
+  .receipt-card .add-btn:disabled{opacity:.6;cursor:default;}
+  .receipt-review{
+    margin-top:14px;padding-top:14px;border-top:1px dashed var(--line);
+  }
+  .receipt-review .field{margin-bottom:10px;}
+  .receipt-review-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;}
+  .receipt-review-actions .add-btn,.receipt-review-actions .ghost-btn{flex:1;min-width:140px;}
+  .receipt-ocr-raw{
+    margin-top:12px;font-size:11.5px;color:var(--ink-soft);
+  }
+  .receipt-ocr-raw summary{cursor:pointer;}
+  .receipt-ocr-raw pre{
+    white-space:pre-wrap;word-break:break-word;background:#FCFAF4;
+    border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:6px;
+    max-height:160px;overflow-y:auto;
+  }
+  .receipt-preview{max-width:100%;max-height:220px;border-radius:8px;margin:10px 0;display:block;}
+
   /* PDF化する内容を一時的に描画しておくための、画面には見えない領域。
      display:noneではなくfixed+画面外配置にしているのは、html2canvasが
      「実際にレイアウトされた要素」でないと正しく画像化できないため。 */
@@ -909,6 +929,208 @@
     return pdfLibsPromise;
   }
 
+  // ---------- レシート読み取り（OCR）機能 ----------
+  // 外部のOCR（文字認識）ライブラリ Tesseract.js を、「レシートを読み取る」が
+  // 最初に押されたときにだけCDNから読み込む。アプリ起動時には読み込まないため、
+  // この機能を使わない限り、これまで通りの「外部通信ゼロ」の起動が保たれる。
+  const OCR_LIB_URL = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
+  let ocrLibPromise = null;
+
+  function ensureOcrLib(){
+    if(ocrLibPromise) return ocrLibPromise;
+    if(window.Tesseract && typeof window.Tesseract.recognize === "function"){
+      ocrLibPromise = Promise.resolve();
+      return ocrLibPromise;
+    }
+    ocrLibPromise = loadScriptOnce(OCR_LIB_URL).then(function(){
+      if(!(window.Tesseract && typeof window.Tesseract.recognize === "function")){
+        throw new Error("文字認識ライブラリの初期化に失敗しました");
+      }
+    }).catch(function(e){
+      ocrLibPromise = null;
+      throw e;
+    });
+    return ocrLibPromise;
+  }
+
+  // 画像から文字を読み取る。日本語＋英語の学習データを使う
+  // （学習データ自体もTesseract.jsが初回のみ自動でダウンロードする）。
+  function runOcr(file){
+    return ensureOcrLib().then(function(){
+      return window.Tesseract.recognize(file, "jpn+eng");
+    }).then(function(result){
+      return (result && result.data && result.data.text) || "";
+    });
+  }
+
+  // レシートの文字から、金額・日付・カテゴリー・メモ（お店の名前など）を
+  // 推測する簡易的なルール。あくまで「たたき台」を作るためのもので、
+  // 必ず人の目で確認してから登録する前提としている。
+  const RECEIPT_CATEGORY_RULES = [
+    {type:"variable", category:"食費", words:["スーパー","マート","イオン","西友","ライフ","まいばすけっと","オーケー","コンビニ","セブン-イレブン","セブンイレブン","ローソン","ファミリーマート","生鮮","青果","精肉","フード"]},
+    {type:"variable", category:"日用品", words:["ドラッグ","薬局","ダイソー","セリア","キャンドゥ","ホームセンター","ドン・キホーテ","ドンキホーテ"]},
+    {type:"variable", category:"医療費", words:["病院","クリニック","歯科","診療","調剤薬局","医院"]},
+    {type:"variable", category:"交通費", words:["ガソリン","ENEOS","出光","コスモ石油","タクシー","駐車場","高速道路","ＪＲ","JR","私鉄","バス","ETC"]},
+    {type:"variable", category:"被服費", words:["ユニクロ","UNIQLO","ＧＵ","GU","しまむら","西松屋","洋服の青山"]},
+    {type:"variable", category:"交際費", words:["居酒屋","レストラン","カラオケ","バー","スナック"]},
+    {type:"variable", category:"娯楽費", words:["シネマ","映画","遊園地","ゲームセンター"]},
+    {type:"variable", category:"教育費", words:["書店","本屋","塾","教材","文房具"]},
+    {type:"fixed", category:"光熱費", words:["電力","電気料金","ガス料金","水道局","水道料金"]},
+    {type:"fixed", category:"通信費", words:["携帯","モバイル","ドコモ","ａｕ","ソフトバンク","楽天モバイル"]}
+  ];
+
+  function guessExpenseCategory(text){
+    for(let i=0; i<RECEIPT_CATEGORY_RULES.length; i++){
+      const rule = RECEIPT_CATEGORY_RULES[i];
+      for(let j=0; j<rule.words.length; j++){
+        if(text.indexOf(rule.words[j]) !== -1){
+          return {type: rule.type, category: rule.category};
+        }
+      }
+    }
+    // どれにも当てはまらない場合は、レシートとして最も可能性の高い
+    // 「その他変動費」を初期値にしておく（固定費の紙レシートは稀なため）。
+    return {type: "variable", category: "その他変動費"};
+  }
+
+  function guessExpenseAmount(text){
+    const totalMatch = text.match(/(?:合計|お会計|御会計|総額|計)[^0-9]{0,10}([0-9][0-9,]{1,9})/);
+    if(totalMatch){
+      const n = parseInt(totalMatch[1].replace(/,/g, ""), 10);
+      if(n > 0) return n;
+    }
+    // 「合計」等の文字が見つからない場合は、文中の金額らしき数値のうち
+    // 最も大きいものを採用する（レシートの合計額は多くの場合、最大の数値になるため）。
+    const matches = text.match(/[0-9]{1,3}(?:,[0-9]{3})+|[0-9]{3,7}/g) || [];
+    const nums = matches
+      .map(function(s){ return parseInt(s.replace(/,/g, ""), 10); })
+      .filter(function(n){ return n > 0 && n < 1000000; });
+    if(nums.length) return Math.max.apply(null, nums);
+    return null;
+  }
+
+  function guessExpenseDate(text){
+    const m = text.match(/(20[0-9]{2})[\/\.年]\s*([0-1]?[0-9])[\/\.月]\s*([0-3]?[0-9])/);
+    if(m){
+      const mo = String(parseInt(m[2], 10)).padStart(2, "0");
+      const d = String(parseInt(m[3], 10)).padStart(2, "0");
+      return m[1] + "-" + mo + "-" + d;
+    }
+    return todayStr();
+  }
+
+  function guessExpenseMemo(text){
+    const lines = text.split("\n").map(function(l){ return l.trim(); }).filter(Boolean);
+    return lines.length ? lines[0].slice(0, 30) : "";
+  }
+
+  function categoryOptionsHtml(type, selected){
+    const cats = type === "fixed" ? FIXED_CATS : VARIABLE_CATS;
+    return cats.map(function(c){
+      return `<option value="${c.key}" ${c.key === selected ? "selected" : ""}>${c.key}</option>`;
+    }).join("");
+  }
+
+  function showReceiptStatus(html){
+    const box = el("receiptStatus");
+    if(box) box.innerHTML = html;
+  }
+
+  function renderReceiptReview(guess, ocrText, previewUrl){
+    showReceiptStatus(`
+      <div class="receipt-review">
+        ${previewUrl ? `<img class="receipt-preview" src="${previewUrl}" alt="読み取ったレシートの画像">` : ""}
+        <p class="hint">読み取った内容です。間違っている場合は修正してから登録してください。</p>
+        <div class="field"><label>種別</label>
+          <select id="receipt-type">
+            <option value="fixed" ${guess.type === "fixed" ? "selected" : ""}>固定費</option>
+            <option value="variable" ${guess.type === "variable" ? "selected" : ""}>変動費</option>
+          </select>
+        </div>
+        <div class="field"><label>カテゴリー</label>
+          <select id="receipt-cat">${categoryOptionsHtml(guess.type, guess.category)}</select>
+        </div>
+        <div class="field"><label>日付</label><input type="date" id="receipt-date" value="${guess.date}"></div>
+        <div class="field"><label>メモ（お店の名前など）</label><input type="text" id="receipt-memo" value="${escapeHtml(guess.memo || "")}"></div>
+        <div class="field"><label>金額</label><input type="number" id="receipt-amount" min="0" value="${guess.amount || ""}"></div>
+        <div class="receipt-review-actions">
+          <button class="add-btn" id="receipt-confirm-btn">この内容で追加する</button>
+          <button class="ghost-btn" id="receipt-cancel-btn">キャンセル</button>
+        </div>
+        <details class="receipt-ocr-raw">
+          <summary>読み取った文字（確認用）</summary>
+          <pre>${escapeHtml(ocrText || "（文字は検出されませんでした）")}</pre>
+        </details>
+      </div>
+    `);
+
+    el("receipt-type").onchange = function(){
+      const newType = el("receipt-type").value;
+      const defaultCat = newType === "fixed" ? FIXED_CATS[0].key : VARIABLE_CATS[0].key;
+      el("receipt-cat").innerHTML = categoryOptionsHtml(newType, defaultCat);
+    };
+    el("receipt-cancel-btn").onclick = function(){
+      showReceiptStatus("");
+    };
+    el("receipt-confirm-btn").onclick = function(){
+      const amount = parseFloat(el("receipt-amount").value);
+      if(!amount || amount <= 0){ el("receipt-amount").focus(); return; }
+      const record = {
+        id: uid(),
+        type: el("receipt-type").value,
+        date: el("receipt-date").value || todayStr(),
+        category: el("receipt-cat").value,
+        memo: el("receipt-memo").value.trim(),
+        amount: amount
+      };
+      persistAdd("expenses", record).then(function(){
+        showReceiptStatus(`<p class="hint">✅ 支出に追加しました。</p>`);
+        renderExpensePanel();
+        renderDashboardPanel();
+      });
+    };
+  }
+
+  function initReceiptScan(){
+    const btn = el("receiptScanBtn");
+    const fileInput = el("receiptFileInput");
+    if(!btn || !fileInput) return;
+    btn.onclick = function(){ fileInput.click(); };
+    fileInput.onchange = function(e){
+      const file = e.target.files && e.target.files[0];
+      fileInput.value = "";
+      if(!file) return;
+
+      let previewUrl = "";
+      try{ previewUrl = URL.createObjectURL(file); }catch(e2){ previewUrl = ""; }
+
+      showReceiptStatus(`
+        ${previewUrl ? `<img class="receipt-preview" src="${previewUrl}" alt="読み取り中のレシート画像">` : ""}
+        <p class="hint">画像を解析しています…（初回はライブラリの読み込みのため、少し時間がかかります）</p>
+      `);
+
+      runOcr(file).then(function(text){
+        const amount = guessExpenseAmount(text);
+        const date = guessExpenseDate(text);
+        const catGuess = guessExpenseCategory(text);
+        const memo = guessExpenseMemo(text);
+        renderReceiptReview({
+          type: catGuess.type,
+          category: catGuess.category,
+          date: date,
+          memo: memo,
+          amount: amount || 0
+        }, text, previewUrl);
+      }).catch(function(e){
+        console.error("レシートの読み取りに失敗しました:", e);
+        showReceiptStatus(`
+          ${previewUrl ? `<img class="receipt-preview" src="${previewUrl}" alt="読み取りに失敗したレシート画像">` : ""}
+          <p class="hint">読み取りに失敗しました。通信環境の良い場所で、もう一度お試しください。うまくいかない場合は、下の入力欄に直接ご入力ください。</p>
+        `);
+      });
+    };
+  }
+
   // 画像化したレポートを、A4サイズのPDFに1〜複数ページにわたって貼り付ける。
   // （同じ画像を、ページごとに上方向へずらしながら繰り返し貼ることで、
   //   長いレポートも自動的に複数ページに分割されるようにしている）
@@ -1421,8 +1643,17 @@
   function renderExpensePanel(){
     if(!el("panel-expense")) return;
     el("panel-expense").innerHTML =
+      `<div class="card receipt-card">
+        <h2>📷 レシートを読み取って自動入力する</h2>
+        <p class="hint">レシートを撮影・アップロードすると、金額やお店の情報を読み取り、固定費・変動費のどちらかに振り分けたうえでフォームに自動入力します。文字の読み取り精度は完璧ではないため、内容を必ず確認してから「この内容で追加する」を押してください。初回はライブラリの読み込みのため、通信環境が必要です。</p>
+        <button class="add-btn" id="receiptScanBtn">📷 レシートを読み取る</button>
+        <input type="file" id="receiptFileInput" accept="image/*" capture="environment" style="display:none">
+        <div id="receiptStatus"></div>
+      </div>` +
       expenseTable("fixed", FIXED_CATS, "固定費を入力する", "固定費", "毎月ほぼ一定額かかる支出です（家賃・住宅ローン、光熱費、通信費、保険料、サブスクなど）。") +
       expenseTable("variable", VARIABLE_CATS, "変動費を入力する", "変動費", "月によって金額が変わる支出です（食費、日用品、医療費、交通費、被服費、交際費、娯楽費、教育費など）。");
+
+    initReceiptScan();
 
     each(document.querySelectorAll(".ex-add"), function(btn){
       btn.onclick = function(){
