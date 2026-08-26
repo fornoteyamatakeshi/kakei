@@ -78,6 +78,28 @@
     min-width:104px;text-align:center;
   }
 
+  /* ヘッダー右側（月切り替え＋メニュー） */
+  .header-controls{display:flex;align-items:center;gap:10px;}
+  .hamburger-btn{
+    width:36px;height:36px;border-radius:8px;border:1px solid var(--line);
+    background:var(--paper-raised);color:var(--indigo-deep);font-size:17px;cursor:pointer;
+    flex-shrink:0;line-height:1;
+  }
+  .hamburger-btn:hover{background:#EFE7D4;}
+
+  /* ハンバーガーメニューから開くナビゲーション */
+  .nav-menu{
+    display:flex;flex-direction:column;gap:4px;
+    background:var(--paper-raised);border:1px solid var(--line);border-radius:12px;
+    padding:8px;margin-bottom:18px;box-shadow:var(--shadow);
+  }
+  .nav-menu-item{
+    text-align:left;background:none;border:none;padding:11px 14px;border-radius:8px;
+    font-size:14px;color:var(--ink);cursor:pointer;font-family:inherit;
+  }
+  .nav-menu-item:hover{background:#EFE7D4;}
+  .nav-menu-item.active{background:var(--indigo-deep);color:#fff;}
+
   /* Tabs */
   .tabs{display:flex;gap:6px;margin-bottom:22px;flex-wrap:wrap;}
   .tab-btn{
@@ -349,7 +371,8 @@
   import { getDatabase, ref, set, remove, update, get, onValue } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-database.js";
   import {
     getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
-    onAuthStateChanged, signOut
+    onAuthStateChanged, signOut,
+    updateEmail as fbUpdateEmail, updatePassword as fbUpdatePassword
   } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
 
   const firebaseConfig = {
@@ -419,6 +442,12 @@
         },
         onChange: function(cb){
           onAuthStateChanged(auth, cb);
+        },
+        updateEmailAddress: function(newEmail){
+          return fbUpdateEmail(auth.currentUser, newEmail);
+        },
+        updatePasswordValue: function(newPassword){
+          return fbUpdatePassword(auth.currentUser, newPassword);
         }
       },
       // ログイン中のユーザーが、すでにどの世帯（household）に所属しているかを調べる
@@ -507,6 +536,9 @@
   let data = { incomes: [], expenses: [], savings: [] };
   let currentMonth = todayStr().slice(0,7); // YYYY-MM
   let activeTab = "income";
+  // currentPage: "main" = 収支の記録・ダッシュボード / "mypage" = マイページ（設定）
+  let currentPage = "main";
+  let menuOpen = false;
   // storageMode: "cloud"    = Claudeアーティファクトの共有ストレージ
   //              "realtime" = Firebase Realtime Databaseでの即時共有
   //              "local"    = この端末のブラウザ内保存のみ
@@ -1084,8 +1116,11 @@
   function inMonth(dateStr){ return dateStr && dateStr.slice(0,7) === currentMonth; }
 
   // ---------- Layout ----------
+  // ヘッダー・ハンバーガーメニューは全ページ共通。中身（#pageContent）だけを
+  // ページごと（ホーム／マイページ）に出し分ける。
   function render(){
     const app = el("app");
+    const showMonthNav = currentPage === "main";
     app.innerHTML = `
       <div class="app-header">
         <div class="brand">
@@ -1095,12 +1130,46 @@
             <p>HOUSEHOLD LEDGER FOR TWO</p>
           </div>
         </div>
-        <div class="month-nav">
-          <button id="prevMonth" title="前の月">‹</button>
-          <div class="month-label">${monthLabel(currentMonth)}</div>
-          <button id="nextMonth" title="次の月">›</button>
+        <div class="header-controls">
+          ${showMonthNav ? `
+          <div class="month-nav">
+            <button id="prevMonth" title="前の月">‹</button>
+            <div class="month-label">${monthLabel(currentMonth)}</div>
+            <button id="nextMonth" title="次の月">›</button>
+          </div>` : ""}
+          <button class="hamburger-btn" id="menuBtn" aria-label="メニュー">☰</button>
         </div>
       </div>
+      ${menuOpen ? `
+      <div class="nav-menu">
+        <button class="nav-menu-item ${currentPage === "main" ? "active" : ""}" data-page="main">🏠 ホーム（収支の記録）</button>
+        <button class="nav-menu-item ${currentPage === "mypage" ? "active" : ""}" data-page="mypage">⚙️ マイページ</button>
+      </div>` : ""}
+      <div id="pageContent"></div>
+    `;
+    el("menuBtn").onclick = function(){ menuOpen = !menuOpen; render(); };
+    each(document.querySelectorAll(".nav-menu-item"), function(b){
+      b.onclick = function(){
+        currentPage = b.dataset.page;
+        menuOpen = false;
+        render();
+      };
+    });
+    if(showMonthNav){
+      el("prevMonth").onclick = () => shiftMonth(-1);
+      el("nextMonth").onclick = () => shiftMonth(1);
+    }
+    if(currentPage === "mypage"){
+      renderMyPage();
+    }else{
+      renderMainPage();
+    }
+  }
+
+  function renderMainPage(){
+    const content = el("pageContent");
+    if(!content) return;
+    content.innerHTML = `
       <div class="mode-banner">
         <div class="mode-text">
           <span class="mode-dot ${storageMode === "local" ? "local" : "cloud"}"></span>
@@ -1108,18 +1177,9 @@
             ? "共有保存中：夫婦どちらの端末からもこのデータを確認できます"
             : storageMode === "realtime"
               ? "リアルタイム共有中：入力するとすぐに夫婦の端末に反映されます"
-              : "この端末にのみ保存中：もう一方の端末と合わせるには「書き出す／読み込む」をご利用ください"}
-        </div>
-        <div class="mode-actions">
-          ${storageMode === "realtime" && currentUser ? `<button class="ghost-btn" id="inviteCodeBtn">招待コード</button>` : ""}
-          <button class="ghost-btn" id="exportBtn">書き出す</button>
-          <button class="ghost-btn" id="importBtn">読み込む</button>
-          <input type="file" id="importFile" accept="application/json" style="display:none">
-          ${storageMode === "realtime" && currentUser ? `<button class="ghost-btn" id="logoutBtn">ログアウト</button>` : ""}
+              : "この端末にのみ保存中：もう一方の端末と合わせるには「書き出す／読み込む」をご利用ください（マイページ）"}
         </div>
       </div>
-      ${storageMode === "realtime" && currentUser ? `<p class="hint" style="margin-top:-12px;">ログイン中：${escapeHtml(currentUser.email || "")}　／　通知：スマートフォンに通知を届けたい場合は、ntfyアプリで「kakeibo-${HOUSEHOLD_ID}」というトピックを購読してください（マニュアル参照）。</p>` : ""}
-      ${storageMode === "realtime" ? `<p class="hint" style="margin-top:-12px;">書き出す／読み込むは、リアルタイム共有中は基本的に不要です（バックアップ用途にのみお使いください）。</p>` : ""}
       ${(storageMode === "realtime" && connectionLost) ? `
       <div class="disconnect-banner">
         <span>🔌 接続が切れたようです。相手の更新がまだ反映されていない可能性があります。</span>
@@ -1136,29 +1196,8 @@
       <div class="panel" id="panel-saving"></div>
       <div class="panel" id="panel-dashboard"></div>
     `;
-    el("prevMonth").onclick = () => shiftMonth(-1);
-    el("nextMonth").onclick = () => shiftMonth(1);
-    el("exportBtn").onclick = exportData;
-    el("importBtn").onclick = () => el("importFile").click();
-    el("importFile").onchange = (e) => {
-      const file = e.target.files && e.target.files[0];
-      if(file) importDataFromFile(file);
-      e.target.value = "";
-    };
     if(el("reconnectBtn")){
       el("reconnectBtn").onclick = function(){ location.reload(); };
-    }
-    if(el("inviteCodeBtn")){
-      el("inviteCodeBtn").onclick = function(){
-        alert("招待コード：\n" + HOUSEHOLD_ID + "\n\nこのコードをパートナーや友人に共有し、ログイン後に「招待コードで参加する」に入力してもらうと、同じ家計データを一緒に使えます。");
-      };
-    }
-    if(el("logoutBtn")){
-      el("logoutBtn").onclick = function(){
-        if(confirm("ログアウトしますか？")){
-          window.firebaseSync.auth.logout().then(function(){ location.reload(); });
-        }
-      };
     }
     each(document.querySelectorAll(".tab-btn"), function(b){
       b.onclick = function(){ activeTab = b.dataset.tab; renderTabs(); };
@@ -1170,7 +1209,116 @@
     renderTabs();
   }
 
+  // ---------- マイページ（設定） ----------
+  function renderMyPage(){
+    const content = el("pageContent");
+    if(!content) return;
+    const loggedIn = storageMode === "realtime" && !!currentUser;
+    content.innerHTML = `
+      <div class="card">
+        <h2>マイページ</h2>
+        ${loggedIn
+          ? `<p class="hint">ログイン中のアカウント：${escapeHtml(currentUser.email || "")}</p>`
+          : `<p class="hint">ログインしていません。この端末だけにデータを保存しています。</p>`}
+      </div>
+      ${loggedIn ? `
+      <div class="card">
+        <h2>招待コード</h2>
+        <p class="hint">パートナーや友人にこのコードを共有すると、同じ家計データを一緒に使えます。</p>
+        <div class="field"><label>招待コード</label><input type="text" id="mypage-invite-code" readonly value="${HOUSEHOLD_ID}"></div>
+        <button class="ghost-btn" id="mypage-copy-invite" style="width:100%;">コピーする</button>
+      </div>
+      <div class="card">
+        <h2>スマートフォン通知</h2>
+        <p class="hint">ntfyアプリ（無料）でこのトピック名を購読すると、記録の追加・削除のたびにスマートフォンへ通知が届きます。</p>
+        <div class="field"><label>通知トピック名</label><input type="text" id="mypage-notify-topic" readonly value="kakeibo-${HOUSEHOLD_ID}"></div>
+      </div>
+      <div class="card">
+        <h2>メールアドレスの変更</h2>
+        <div class="field"><label>新しいメールアドレス</label><input type="email" id="mypage-new-email"></div>
+        <button class="add-btn" id="mypage-change-email" style="width:100%;">変更する</button>
+      </div>
+      <div class="card">
+        <h2>パスワードの変更</h2>
+        <div class="field"><label>新しいパスワード（6文字以上）</label><input type="password" id="mypage-new-password"></div>
+        <button class="add-btn" id="mypage-change-password" style="width:100%;">変更する</button>
+      </div>
+      ` : ""}
+      <div class="card">
+        <h2>データの書き出し・読み込み</h2>
+        <p class="hint">${storageMode === "realtime" ? "リアルタイム共有中は基本的に不要ですが、バックアップとしてお使いいただけます。" : "この端末ともう一方の端末のデータをまとめるときに使います。"}</p>
+        <button class="ghost-btn" id="mypage-exportBtn" style="width:100%;margin-bottom:8px;">書き出す</button>
+        <button class="ghost-btn" id="mypage-importBtn" style="width:100%;">読み込む</button>
+        <input type="file" id="mypage-importFile" accept="application/json" style="display:none">
+      </div>
+      ${loggedIn ? `
+      <div class="card">
+        <button class="ghost-btn" id="mypage-logoutBtn" style="width:100%;">ログアウトする</button>
+      </div>` : ""}
+    `;
+
+    el("mypage-exportBtn").onclick = exportData;
+    el("mypage-importBtn").onclick = () => el("mypage-importFile").click();
+    el("mypage-importFile").onchange = (e) => {
+      const file = e.target.files && e.target.files[0];
+      if(file) importDataFromFile(file);
+      e.target.value = "";
+    };
+
+    if(loggedIn){
+      el("mypage-copy-invite").onclick = function(){
+        if(navigator.clipboard && navigator.clipboard.writeText){
+          navigator.clipboard.writeText(HOUSEHOLD_ID).then(function(){
+            alert("招待コードをコピーしました。");
+          }).catch(function(){
+            alert("コピーできませんでした。表示されている招待コードを手動で選択してコピーしてください。");
+          });
+        }else{
+          alert("お使いのブラウザは自動コピーに対応していません。表示されている招待コードを手動で選択してコピーしてください。");
+        }
+      };
+      el("mypage-change-email").onclick = function(){
+        const newEmail = el("mypage-new-email").value.trim();
+        if(!newEmail){ alert("新しいメールアドレスを入力してください。"); return; }
+        window.firebaseSync.auth.updateEmailAddress(newEmail).then(function(){
+          currentUser.email = newEmail;
+          alert("メールアドレスを変更しました。");
+          renderMyPage();
+        }).catch(function(e){
+          console.error(e);
+          if(e && e.code === "auth/requires-recent-login"){
+            alert("セキュリティのため、一度ログアウトしてから再度ログインし、もう一度お試しください。");
+          }else{
+            alert("メールアドレスの変更に失敗しました。");
+          }
+        });
+      };
+      el("mypage-change-password").onclick = function(){
+        const newPassword = el("mypage-new-password").value;
+        if(!newPassword || newPassword.length < 6){ alert("6文字以上のパスワードを入力してください。"); return; }
+        window.firebaseSync.auth.updatePasswordValue(newPassword).then(function(){
+          alert("パスワードを変更しました。");
+          renderMyPage();
+        }).catch(function(e){
+          console.error(e);
+          if(e && e.code === "auth/requires-recent-login"){
+            alert("セキュリティのため、一度ログアウトしてから再度ログインし、もう一度お試しください。");
+          }else{
+            alert("パスワードの変更に失敗しました。");
+          }
+        });
+      };
+      el("mypage-logoutBtn").onclick = function(){
+        if(confirm("ログアウトしますか？")){
+          window.firebaseSync.auth.logout().then(function(){ location.reload(); });
+        }
+      };
+    }
+  }
+
   function renderTabs(){
+    // マイページ表示中など、タブ・パネルがDOM上に存在しない場合は何もしない
+    if(currentPage !== "main" || !el("panel-income")) return;
     each(document.querySelectorAll(".tab-btn"), function(b){
       b.classList.toggle("active", b.dataset.tab === activeTab);
     });
@@ -1182,6 +1330,7 @@
 
   // ---------- Income ----------
   function renderIncomePanel(){
+    if(!el("panel-income")) return;
     const monthly = data.incomes.filter(i=>inMonth(i.date));
     const rows = monthly.slice().sort((a,b)=> b.date.localeCompare(a.date)).map(i=>{
       const cat = INCOME_CATS.find(c=>c.key===i.category);
@@ -1270,6 +1419,7 @@
   }
 
   function renderExpensePanel(){
+    if(!el("panel-expense")) return;
     el("panel-expense").innerHTML =
       expenseTable("fixed", FIXED_CATS, "固定費を入力する", "固定費", "毎月ほぼ一定額かかる支出です（家賃・住宅ローン、光熱費、通信費、保険料、サブスクなど）。") +
       expenseTable("variable", VARIABLE_CATS, "変動費を入力する", "変動費", "月によって金額が変わる支出です（食費、日用品、医療費、交通費、被服費、交際費、娯楽費、教育費など）。");
@@ -1297,6 +1447,7 @@
 
   // ---------- Saving ----------
   function renderSavingPanel(){
+    if(!el("panel-saving")) return;
     const monthly = data.savings.filter(s=>inMonth(s.date));
     const rows = monthly.slice().sort((a,b)=> b.date.localeCompare(a.date)).map(s=>{
       const cat = SAVING_CATS.find(c=>c.key===s.category);
@@ -1360,6 +1511,7 @@
 
   // ---------- Dashboard ----------
   function renderDashboardPanel(){
+    if(!el("panel-dashboard")) return;
     const incomes = data.incomes.filter(i=>inMonth(i.date));
     const fixed = data.expenses.filter(e=>inMonth(e.date) && e.type==="fixed");
     const variable = data.expenses.filter(e=>inMonth(e.date) && e.type==="variable");
@@ -1396,6 +1548,11 @@
         <div class="stat saving"><div class="label">貯金・積立合計</div><div class="value">${yen(totalSaving)}</div></div>
         <div class="stat balance"><div class="label">収支（残り）</div><div class="value">${yen(balance)}</div></div>
       </div>
+      <div class="card print-card">
+        <h2>この月の記録をPDFで出力する</h2>
+        <p class="hint">${monthLabel(currentMonth)}分の収支サマリーと明細を、印刷・保管しやすい1枚のレポートにまとめて出力します。毎週・毎月の記録用にご利用ください。</p>
+        <button class="add-btn" id="pdfExportBtn">🖨️ ${monthLabel(currentMonth)}のレポートをPDF出力する</button>
+      </div>
       <div class="card">
         <h2>${monthLabel(currentMonth)}の収支バランス <span style="font-size:12px;color:var(--ink-soft);font-weight:400;">貯蓄率 ${savingRate}%</span></h2>
         <div class="charts">
@@ -1425,6 +1582,9 @@
     // stash breakdown for chart drawing
     renderDashboardPanel._ctx = {totalIncome, totalFixed, totalVariable, totalSaving, balance, fixedBd, variableBd};
     if(activeTab === "dashboard") drawCharts();
+    if(el("pdfExportBtn")){
+      el("pdfExportBtn").onclick = exportMonthlyPDF;
+    }
   }
 
   // 外部グラフライブラリを使わず、SVGだけで棒グラフ・ドーナツグラフを描画する。
