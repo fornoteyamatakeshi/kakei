@@ -213,7 +213,20 @@
   .cat-tag{
     font-size:11px;padding:2px 8px;border-radius:999px;color:#fff;white-space:nowrap;
   }
+  .added-by-tag{
+    font-size:10px;color:var(--ink-soft);
+  }
   .subtotal-row td{font-weight:700;border-top:1px solid var(--line);border-bottom:none;padding-top:11px;}
+
+  /* 変動費の予算設定・達成率表示 */
+  .budget-panel{margin-bottom:6px;}
+  .legend-list.with-budget li{display:block;padding:7px 0;}
+  .legend-row{display:flex;justify-content:space-between;align-items:center;}
+  .legend-budget{font-size:11px;margin-top:2px;}
+  .budget-bar-track{
+    height:5px;border-radius:3px;background:#EFE9DB;margin-top:4px;overflow:hidden;
+  }
+  .budget-bar-fill{height:100%;border-radius:3px;}
 
   /* Dashboard */
   .stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px;}
@@ -437,6 +450,12 @@
       deleteRecord: function(householdId, kind, id){
         return remove(ref(db, "households/" + householdId + "/" + kind + "/" + id));
       },
+      // 変動費のカテゴリー別予算（{カテゴリー名: 金額}の単純なオブジェクト）を
+      // まるごと保存する。個々のレコードのような単位ではないため、
+      // writeRecordとは別に専用の関数を用意している。
+      setBudgets: function(householdId, budgets){
+        return set(ref(db, "households/" + householdId + "/budgets"), budgets);
+      },
       // Firebase専用の特別なパス「.info/connected」を購読すると、
       // 今まさにサーバーへ接続できているかどうかが分かる。
       // これを使って「今は最新の状態と繋がっているか」を画面に表示する。
@@ -553,7 +572,7 @@
   const todayStr = () => new Date().toISOString().slice(0,10);
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
 
-  let data = { incomes: [], expenses: [], savings: [] };
+  let data = { incomes: [], expenses: [], savings: [], budgets: {} };
   let currentMonth = todayStr().slice(0,7); // YYYY-MM
   let activeTab = "income";
   // currentPage: "main" = 収支の記録・ダッシュボード / "mypage" = マイページ（設定）
@@ -568,6 +587,7 @@
     data.incomes = (parsed && parsed.incomes) || [];
     data.expenses = (parsed && parsed.expenses) || [];
     data.savings = (parsed && parsed.savings) || [];
+    data.budgets = (parsed && parsed.budgets) || {};
   }
 
   function objectToArray(obj){
@@ -583,6 +603,7 @@
     data.incomes = objectToArray(val && val.incomes);
     data.expenses = objectToArray(val && val.expenses);
     data.savings = objectToArray(val && val.savings);
+    data.budgets = (val && val.budgets) || {};
   }
 
   // 注意：このアプリはスマートフォンの標準ブラウザや、機種・アプリ内ブラウザの違いによる
@@ -775,6 +796,42 @@
       });
     }
     data[kind] = data[kind].filter(function(x){ return x.id !== id; });
+    return saveData();
+  }
+
+  // レコード（収入・支出・貯金）に共通の項目を組み立てる。
+  // ログイン中（リアルタイム共有モード）であれば、「誰が記録したか」を
+  // 一緒に保存しておく（addedBy）。ログインしていない場合は付与しない。
+  function buildRecordBase(fields){
+    const record = Object.assign({ id: uid() }, fields);
+    if(storageMode === "realtime" && currentUser && currentUser.email){
+      record.addedBy = currentUser.email;
+    }
+    return record;
+  }
+
+  // 一覧表に表示する「記録した人」の小さなラベル。メールアドレスの
+  // @より前の部分だけを表示し、addedByが無い場合は何も表示しない。
+  function addedByTag(record){
+    if(!record || !record.addedBy) return "";
+    return `<br><span class="added-by-tag">${escapeHtml(record.addedBy.split("@")[0])}</span>`;
+  }
+
+  // 変動費のカテゴリー別予算の保存。予算は「今月分」のような月ごとの値では
+  // なく、毎月の目安として1つだけ持たせるシンプルな仕組みにしている
+  // （多くの家庭では「食費は毎月○万円」のように、月によって変えるより
+  // 一定の目安を使い続けることが多いという想定による）。
+  function persistBudgets(budgets){
+    data.budgets = budgets;
+    if(storageMode === "realtime"){
+      return window.firebaseSync.setBudgets(HOUSEHOLD_ID, budgets).then(function(){
+        flashSaved();
+      }).catch(function(e){
+        console.error("予算の保存に失敗したため、この端末内保存に切り替えます:", e);
+        storageMode = "local";
+        return saveData();
+      });
+    }
     return saveData();
   }
 
@@ -1075,14 +1132,13 @@
     el("receipt-confirm-btn").onclick = function(){
       const amount = parseFloat(el("receipt-amount").value);
       if(!amount || amount <= 0){ el("receipt-amount").focus(); return; }
-      const record = {
-        id: uid(),
+      const record = buildRecordBase({
         type: el("receipt-type").value,
         date: el("receipt-date").value || todayStr(),
         category: el("receipt-cat").value,
         memo: el("receipt-memo").value.trim(),
         amount: amount
-      };
+      });
       persistAdd("expenses", record).then(function(){
         showReceiptStatus(`<p class="hint">✅ 支出に追加しました。</p>`);
         renderExpensePanel();
@@ -1281,21 +1337,33 @@
         }
       });
     });
-    return addedRecords;
+    // 予算は「まだ自分の端末で設定していないカテゴリーのみ」取り込む
+    // （すでに設定済みの予算を、古いバックアップで上書きしてしまわないようにするため）。
+    let budgetsChanged = false;
+    if(parsed.budgets && typeof parsed.budgets === "object"){
+      Object.keys(parsed.budgets).forEach(function(cat){
+        if(!(cat in data.budgets)){
+          data.budgets[cat] = parsed.budgets[cat];
+          budgetsChanged = true;
+        }
+      });
+    }
+    return { addedRecords: addedRecords, budgetsChanged: budgetsChanged };
   }
 
   function importDataFromFile(file){
     const reader = new FileReader();
     reader.onload = function(){
-      let parsed, addedRecords;
+      let parsed, mergeResult;
       try{
         parsed = JSON.parse(reader.result);
-        addedRecords = mergeIncoming(parsed);
+        mergeResult = mergeIncoming(parsed);
       }catch(e){
         console.error(e);
         alert("ファイルの読み込みに失敗しました。書き出し機能で作成したファイルを選択してください。");
         return;
       }
+      const addedRecords = mergeResult.addedRecords;
       let savePromise;
       if(storageMode === "realtime" && addedRecords.length){
         // レコードごとにFirebaseへ書き込む（1件ずつ順番に処理する）
@@ -1306,6 +1374,11 @@
             return window.firebaseSync.writeRecord(HOUSEHOLD_ID, item.kind, item.record.id, clone);
           });
         }, Promise.resolve());
+        if(mergeResult.budgetsChanged){
+          savePromise = savePromise.then(function(){
+            return window.firebaseSync.setBudgets(HOUSEHOLD_ID, data.budgets);
+          });
+        }
       }else{
         savePromise = saveData();
       }
@@ -1557,7 +1630,7 @@
     const rows = monthly.slice().sort((a,b)=> b.date.localeCompare(a.date)).map(i=>{
       const cat = INCOME_CATS.find(c=>c.key===i.category);
       return `<tr>
-        <td>${i.date}</td>
+        <td>${i.date}${addedByTag(i)}</td>
         <td><span class="cat-tag" style="background:${cat.color}">${cat.label}</span></td>
         <td>${escapeHtml(i.memo||"")}</td>
         <td class="amt">${yen(i.amount)}</td>
@@ -1591,10 +1664,10 @@
     el("inc-add").onclick = function(){
       const amount = parseFloat(el("inc-amount").value);
       if(!amount || amount <= 0){ el("inc-amount").focus(); return; }
-      const record = {
-        id: uid(), date: el("inc-date").value || todayStr(),
+      const record = buildRecordBase({
+        date: el("inc-date").value || todayStr(),
         category: el("inc-cat").value, memo: el("inc-memo").value.trim(), amount: amount
-      };
+      });
       persistAdd("incomes", record).then(function(){
         renderIncomePanel(); renderDashboardPanel();
       });
@@ -1608,7 +1681,7 @@
     const rows = monthly.slice().sort((a,b)=> b.date.localeCompare(a.date)).map(e=>{
       const cat = cats.find(c=>c.key===e.category) || {color:"#999"};
       return `<tr>
-        <td>${e.date}</td>
+        <td>${e.date}${addedByTag(e)}</td>
         <td><span class="cat-tag" style="background:${cat.color}">${e.category}</span></td>
         <td>${escapeHtml(e.memo||"")}</td>
         <td class="amt">${yen(e.amount)}</td>
@@ -1640,6 +1713,86 @@
     `;
   }
 
+  // ---------- 変動費の予算設定 ----------
+  function budgetEditAreaHtml(){
+    return `
+      <p class="hint">空欄のカテゴリーは「予算なし」として扱われます（内訳に達成率は表示されません）。</p>
+      ${VARIABLE_CATS.map(function(c){
+        const val = (data.budgets && data.budgets[c.key]) || "";
+        return `<div class="field"><label>${c.key}</label><input type="number" min="0" class="budget-input" data-cat="${c.key}" value="${val}" placeholder="例：60000"></div>`;
+      }).join("")}
+      <button class="add-btn" id="budgetSaveBtn" style="width:100%;">予算を保存する</button>
+    `;
+  }
+
+  function initBudgetPanel(){
+    const toggleBtn = el("budgetToggleBtn");
+    const area = el("budgetEditArea");
+    if(!toggleBtn || !area) return;
+    toggleBtn.onclick = function(){
+      const willOpen = area.style.display === "none";
+      if(willOpen){
+        area.innerHTML = budgetEditAreaHtml();
+        area.style.display = "block";
+        el("budgetSaveBtn").onclick = function(){
+          const newBudgets = {};
+          each(document.querySelectorAll(".budget-input"), function(inp){
+            const v = parseFloat(inp.value);
+            if(v > 0) newBudgets[inp.dataset.cat] = v;
+          });
+          persistBudgets(newBudgets).then(function(){
+            area.style.display = "none";
+            renderExpensePanel();
+            renderDashboardPanel();
+          });
+        };
+      }else{
+        area.style.display = "none";
+      }
+    };
+  }
+
+  // ---------- 先月の固定費をコピーする ----------
+  function copyLastMonthFixed(){
+    const [y, m] = currentMonth.split("-").map(Number);
+    const prevDate = new Date(y, m - 2, 1); // m は1始まり。前月の1日を求める
+    const prevMonth = prevDate.getFullYear() + "-" + String(prevDate.getMonth() + 1).padStart(2, "0");
+    const prevFixed = data.expenses.filter(function(e){
+      return e.type === "fixed" && e.date.slice(0, 7) === prevMonth;
+    });
+    if(!prevFixed.length){
+      alert(monthLabel(prevMonth) + "の固定費の記録が見つかりませんでした。");
+      return;
+    }
+    const alreadyHasThisMonth = data.expenses.some(function(e){
+      return e.type === "fixed" && inMonth(e.date);
+    });
+    const confirmMsg = alreadyHasThisMonth
+      ? "今月にはすでに固定費の記録があります。" + monthLabel(prevMonth) + "の固定費（" + prevFixed.length + "件）をそれとは別に追加しますか？"
+      : monthLabel(prevMonth) + "の固定費（" + prevFixed.length + "件）を、" + monthLabel(currentMonth) + "分としてコピーします。よろしいですか？";
+    if(!confirm(confirmMsg)) return;
+
+    const targetDate = currentMonth + "-01";
+    let chain = Promise.resolve();
+    prevFixed.forEach(function(src){
+      chain = chain.then(function(){
+        const record = buildRecordBase({
+          type: "fixed",
+          date: targetDate,
+          category: src.category,
+          memo: src.memo,
+          amount: src.amount
+        });
+        return persistAdd("expenses", record);
+      });
+    });
+    chain.then(function(){
+      renderExpensePanel();
+      renderDashboardPanel();
+      alert(prevFixed.length + "件の固定費をコピーしました。金額が変わっている場合は、内容を修正してください。");
+    });
+  }
+
   function renderExpensePanel(){
     if(!el("panel-expense")) return;
     el("panel-expense").innerHTML =
@@ -1651,9 +1804,21 @@
         <div id="receiptStatus"></div>
       </div>` +
       expenseTable("fixed", FIXED_CATS, "固定費を入力する", "固定費", "毎月ほぼ一定額かかる支出です（家賃・住宅ローン、光熱費、通信費、保険料、サブスクなど）。") +
+      `<div class="card" style="margin-top:-8px;">
+        <button class="ghost-btn" id="copyLastMonthFixedBtn" style="width:100%;">📋 先月の固定費をコピーする</button>
+        <p class="hint" style="margin-top:8px;margin-bottom:0;">先月登録した固定費（家賃・光熱費など）を、今月分としてまとめてコピーします。金額が変わっていれば、コピー後に修正してください。</p>
+      </div>` +
+      `<div class="card budget-panel">
+        <h2>💰 変動費の予算</h2>
+        <p class="hint">食費や日用品など、カテゴリーごとに毎月の目安予算を設定すると、下の内訳やダッシュボードに達成率が表示されます。</p>
+        <button class="ghost-btn" id="budgetToggleBtn" style="width:100%;">予算を設定する</button>
+        <div id="budgetEditArea" style="display:none;margin-top:14px;"></div>
+      </div>` +
       expenseTable("variable", VARIABLE_CATS, "変動費を入力する", "変動費", "月によって金額が変わる支出です（食費、日用品、医療費、交通費、被服費、交際費、娯楽費、教育費など）。");
 
     initReceiptScan();
+    initBudgetPanel();
+    el("copyLastMonthFixedBtn").onclick = copyLastMonthFixed;
 
     each(document.querySelectorAll(".ex-add"), function(btn){
       btn.onclick = function(){
@@ -1661,13 +1826,13 @@
         const form = btn.closest(".entry-form");
         const amount = parseFloat(form.querySelector(".ex-amount").value);
         if(!amount || amount <= 0){ form.querySelector(".ex-amount").focus(); return; }
-        const record = {
-          id: uid(), type: type,
+        const record = buildRecordBase({
+          type: type,
           date: form.querySelector(".ex-date").value || todayStr(),
           category: form.querySelector(".ex-cat").value,
           memo: form.querySelector(".ex-memo").value.trim(),
           amount: amount
-        };
+        });
         persistAdd("expenses", record).then(function(){
           renderExpensePanel(); renderDashboardPanel();
         });
@@ -1683,7 +1848,7 @@
     const rows = monthly.slice().sort((a,b)=> b.date.localeCompare(a.date)).map(s=>{
       const cat = SAVING_CATS.find(c=>c.key===s.category);
       return `<tr>
-        <td>${s.date}</td>
+        <td>${s.date}${addedByTag(s)}</td>
         <td><span class="cat-tag" style="background:${cat.color}">${cat.label}</span></td>
         <td>${escapeHtml(s.memo||"")}</td>
         <td class="amt">${yen(s.amount)}</td>
@@ -1717,10 +1882,10 @@
     el("sav-add").onclick = function(){
       const amount = parseFloat(el("sav-amount").value);
       if(!amount || amount <= 0){ el("sav-amount").focus(); return; }
-      const record = {
-        id: uid(), date: el("sav-date").value || todayStr(),
+      const record = buildRecordBase({
+        date: el("sav-date").value || todayStr(),
         category: el("sav-cat").value, memo: el("sav-memo").value.trim(), amount: amount
-      };
+      });
       persistAdd("savings", record).then(function(){
         renderSavingPanel(); renderDashboardPanel();
       });
@@ -1772,6 +1937,26 @@
       return list.map(x=>`<li><span class="legend-name"><span class="cat-dot" style="background:${x.color}"></span>${x.label}</span><span class="amt">${yen(x.sum)}</span></li>`).join("");
     }
 
+    // 変動費だけは、予算が設定されているカテゴリーについて達成率も表示する
+    function legendWithBudget(list){
+      if(!list.length) return `<li class="empty-row">データがありません</li>`;
+      return list.map(function(x){
+        const budget = data.budgets && data.budgets[x.label];
+        const row1 = `<div class="legend-row"><span class="legend-name"><span class="cat-dot" style="background:${x.color}"></span>${x.label}</span><span class="amt">${yen(x.sum)}</span></div>`;
+        if(!budget){ return `<li>${row1}</li>`; }
+        const pct = Math.round((x.sum / budget) * 100);
+        const over = x.sum > budget;
+        const barColor = over ? "var(--danger)" : (pct >= 80 ? "var(--gold)" : "var(--income)");
+        const row2 = `
+          <div class="legend-budget" style="color:${over ? "var(--danger)" : "var(--ink-soft)"};">
+            予算 ${yen(budget)}中 ${pct}%${over ? "（予算超過）" : ""}
+          </div>
+          <div class="budget-bar-track"><div class="budget-bar-fill" style="width:${Math.min(pct,100)}%;background:${barColor};"></div></div>
+        `;
+        return `<li>${row1}${row2}</li>`;
+      }).join("");
+    }
+
     el("panel-dashboard").innerHTML = `
       <div class="stat-grid">
         <div class="stat income"><div class="label">収入合計</div><div class="value">${yen(totalIncome)}</div></div>
@@ -1805,8 +1990,8 @@
           <ul class="legend-list">${legend(fixedBd)}</ul>
         </div>
         <div class="card">
-          <h2>変動費の内訳</h2>
-          <ul class="legend-list">${legend(variableBd)}</ul>
+          <h2>変動費の内訳<span style="font-size:11px;color:var(--ink-soft);font-weight:400;"> ／ 予算はマイページと支出タブから設定できます</span></h2>
+          <ul class="legend-list with-budget">${legendWithBudget(variableBd)}</ul>
         </div>
       </div>
     `;
