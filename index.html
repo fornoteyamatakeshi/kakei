@@ -1010,13 +1010,108 @@
     return ocrLibPromise;
   }
 
+  // 画像を一度<canvas>に描画する。これには2つの狙いがある：
+  // (1) HEIC等、ブラウザによっては直接デコードできない画像形式を使った場合に、
+  //     ここで確実に失敗を検知できる（失敗時は分かりやすいエラーメッセージを出す）
+  // (2) OCRにかける前に、サイズ調整・コントラスト強調などの前処理を行える
+  function loadImageToCanvas(file){
+    return new Promise(function(resolve, reject){
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = function(){
+        URL.revokeObjectURL(url);
+        if(!img.naturalWidth || !img.naturalHeight){
+          reject(new Error("画像を読み込めませんでした（サイズが取得できません）"));
+          return;
+        }
+        // 大きすぎる写真はOCRが遅くなるうえ精度も上がらないため、
+        // 長辺を1800pxを目安に縮小する（小さい画像はそのまま）。
+        const maxSide = 1800;
+        const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+        const w = Math.round(img.naturalWidth * scale);
+        const h = Math.round(img.naturalHeight * scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas);
+      };
+      img.onerror = function(){
+        URL.revokeObjectURL(url);
+        reject(new Error("画像の形式に対応していないため読み込めませんでした（HEIC形式などが原因の場合があります）"));
+      };
+      img.src = url;
+    });
+  }
+
+  // グレースケール化＋二値化（白黒化）を行う。レシートは「白い紙に黒い文字」の
+  // コントラストが本来ハッキリしているが、木目調のテーブルなど背景が写り込んだ
+  // 写真では、OCRが背景の模様（木目の線など）まで文字と誤認しやすい。
+  // Otsu法（画像処理で広く使われる、明暗を自動で最適な境目で「白」と「黒」に
+  // 分ける手法）で二値化することで、文字だけをくっきり残しつつ、背景の
+  // 模様のノイズを大きく減らせる。単純な明るさ調整よりも効果が高い。
+  function preprocessForOcr(canvas){
+    const ctx = canvas.getContext("2d");
+    const w = canvas.width, h = canvas.height;
+    const imageData = ctx.getImageData(0, 0, w, h);
+    const px = imageData.data;
+    const n = w * h;
+    const gray = new Uint8ClampedArray(n);
+    const hist = new Array(256).fill(0);
+    for(let i = 0, p = 0; i < n; i++, p += 4){
+      const g = Math.round(0.299 * px[p] + 0.587 * px[p+1] + 0.114 * px[p+2]);
+      gray[i] = g;
+      hist[g]++;
+    }
+    // Otsu法：クラス間分散が最大になる明るさのしきい値を総当たりで探す
+    let sumAll = 0;
+    for(let t = 0; t < 256; t++) sumAll += t * hist[t];
+    let sumB = 0, weightB = 0, maxVar = 0, threshold = 128;
+    for(let t = 0; t < 256; t++){
+      weightB += hist[t];
+      if(weightB === 0) continue;
+      const weightF = n - weightB;
+      if(weightF === 0) break;
+      sumB += t * hist[t];
+      const meanB = sumB / weightB;
+      const meanF = (sumAll - sumB) / weightF;
+      const varBetween = weightB * weightF * (meanB - meanF) * (meanB - meanF);
+      if(varBetween > maxVar){ maxVar = varBetween; threshold = t; }
+    }
+    for(let i = 0, p = 0; i < n; i++, p += 4){
+      const v = gray[i] > threshold ? 255 : 0;
+      px[p] = v; px[p+1] = v; px[p+2] = v;
+    }
+    ctx.putImageData(imageData, 0, 0);
+    return canvas;
+  }
+
   // 画像から文字を読み取る。日本語＋英語の学習データを使う
   // （学習データ自体もTesseract.jsが初回のみ自動でダウンロードする）。
+  // レシートは縦に長い1つの文字ブロックであることが多いため、
+  // ページ全体を解析する既定モードではなく「単一のテキストブロック」を
+  // 前提としたモード（PSM 6）を明示的に指定し、読み取り精度を高めている。
   function runOcr(file){
+    let worker;
     return ensureOcrLib().then(function(){
-      return window.Tesseract.recognize(file, "jpn+eng");
-    }).then(function(result){
-      return (result && result.data && result.data.text) || "";
+      return loadImageToCanvas(file);
+    }).then(function(canvas){
+      return preprocessForOcr(canvas);
+    }).then(function(canvas){
+      return window.Tesseract.createWorker("jpn+eng").then(function(w){
+        worker = w;
+        return worker.setParameters({ tessedit_pageseg_mode: "6" });
+      }).then(function(){
+        return worker.recognize(canvas);
+      }).then(function(result){
+        return worker.terminate().then(function(){
+          return (result && result.data && result.data.text) || "";
+        });
+      });
+    }).catch(function(e){
+      if(worker){ try{ worker.terminate(); }catch(e2){} }
+      throw e;
     });
   }
 
@@ -1094,10 +1189,12 @@
   }
 
   function renderReceiptReview(guess, ocrText, previewUrl){
+    const amountMissing = !guess.amount;
     showReceiptStatus(`
       <div class="receipt-review">
         ${previewUrl ? `<img class="receipt-preview" src="${previewUrl}" alt="読み取ったレシートの画像">` : ""}
         <p class="hint">読み取った内容です。間違っている場合は修正してから登録してください。</p>
+        ${amountMissing ? `<p class="hint" style="color:var(--danger);">⚠️ 金額を自動で読み取れませんでした。「金額」欄に手動で入力してから登録してください。</p>` : ""}
         <div class="field"><label>種別</label>
           <select id="receipt-type">
             <option value="fixed" ${guess.type === "fixed" ? "selected" : ""}>固定費</option>
@@ -1109,7 +1206,7 @@
         </div>
         <div class="field"><label>日付</label><input type="date" id="receipt-date" value="${guess.date}"></div>
         <div class="field"><label>メモ（お店の名前など）</label><input type="text" id="receipt-memo" value="${escapeHtml(guess.memo || "")}"></div>
-        <div class="field"><label>金額</label><input type="number" id="receipt-amount" min="0" value="${guess.amount || ""}"></div>
+        <div class="field"><label>金額</label><input type="number" id="receipt-amount" min="0" value="${guess.amount || ""}" placeholder="金額を入力"></div>
         <div class="receipt-review-actions">
           <button class="add-btn" id="receipt-confirm-btn">この内容で追加する</button>
           <button class="ghost-btn" id="receipt-cancel-btn">キャンセル</button>
@@ -1179,9 +1276,13 @@
         }, text, previewUrl);
       }).catch(function(e){
         console.error("レシートの読み取りに失敗しました:", e);
+        const isDecodeError = e && /読み込めません|対応していない/.test(e.message || "");
+        const message = isDecodeError
+          ? "この画像を読み込めませんでした。iPhoneの「HEIC」形式の画像は一部のブラウザで読み込めないことがあります。設定アプリの「カメラ」→「フォーマット」で「互換性優先」に変更するか、共有時に「JPEGとして書き出す」を選んでからもう一度お試しください。"
+          : "読み取りに失敗しました。通信環境の良い場所で、もう一度お試しください。うまくいかない場合は、下の入力欄に直接ご入力ください。";
         showReceiptStatus(`
           ${previewUrl ? `<img class="receipt-preview" src="${previewUrl}" alt="読み取りに失敗したレシート画像">` : ""}
-          <p class="hint">読み取りに失敗しました。通信環境の良い場所で、もう一度お試しください。うまくいかない場合は、下の入力欄に直接ご入力ください。</p>
+          <p class="hint">${message}</p>
         `);
       });
     };
@@ -1798,7 +1899,7 @@
     el("panel-expense").innerHTML =
       `<div class="card receipt-card">
         <h2>📷 レシートを読み取って自動入力する</h2>
-        <p class="hint">レシートを撮影・アップロードすると、金額やお店の情報を読み取り、固定費・変動費のどちらかに振り分けたうえでフォームに自動入力します。文字の読み取り精度は完璧ではないため、内容を必ず確認してから「この内容で追加する」を押してください。初回はライブラリの読み込みのため、通信環境が必要です。</p>
+        <p class="hint">レシートを撮影・アップロードすると、金額やお店の情報を読み取り、固定費・変動費のどちらかに振り分けたうえでフォームに自動入力します。文字の読み取り精度は完璧ではないため、内容を必ず確認してから「この内容で追加する」を押してください。初回はライブラリの読み込みのため、通信環境が必要です。<br>📸 きれいに読み取るコツ：レシートを画面いっぱいに、なるべく傾けずまっすぐ撮影してください。無地の背景（机の上に紙を敷くなど）の方が読み取りやすくなります。</p>
         <button class="add-btn" id="receiptScanBtn">📷 レシートを読み取る</button>
         <input type="file" id="receiptFileInput" accept="image/*" capture="environment" style="display:none">
         <div id="receiptStatus"></div>
