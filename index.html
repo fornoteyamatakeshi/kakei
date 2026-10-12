@@ -269,6 +269,7 @@
   .save-status.show{opacity:1;transform:none;}
   .save-status.error{background:var(--danger);max-width:calc(100% - 36px);border-radius:12px;line-height:1.6;}
   .warn-text{color:var(--danger) !important;}
+  [hidden]{display:none !important;}
   .btn-row{display:flex;gap:8px;margin-top:8px;}
   .btn-row .ghost-btn{flex:1;min-height:38px;}
   .danger-btn{color:var(--danger);border-color:#E7C3BE;}
@@ -588,8 +589,21 @@
           }).then(function(){ return householdId; });
         });
       },
-      // 招待コード・通知トピック名・自分のメンバー情報（メールアドレス）が
+      // データベースのルールが新しい版（招待コード等に対応した firebase_rules_v2.json）に
+      // 更新済みかを調べる。新しいルールでは invites/ の1件を読めるが、古いルールでは
+      // 権限エラーになる。判定できない場合（通信エラー等）は「古いルール」として扱う。
+      probeRulesV2: function(){
+        return get(ref(db, "invites/__probe__")).then(function(){ return true; }, function(){ return false; });
+      },
+      // 古いルールのデータベースでの参加方法（世帯IDを直接入力する）
+      joinHouseholdLegacy: function(uid, householdId){
+        return set(ref(db, "households/" + householdId + "/members/" + uid), true).then(function(){
+          return set(ref(db, "users/" + uid + "/householdId"), householdId);
+        }).then(function(){ return householdId; });
+      },
+      // 招待コード・自分のメンバー情報（メールアドレス）が
       // まだ無い世帯（以前のバージョンで作った世帯など）に、それらを用意する。
+      // 通知トピック名は自動では作らない（作り直したときだけ保存する。17.1節）。
       setupHouseholdMeta: function(householdId, uid, email, meta){
         let chain = Promise.resolve();
         if(!meta.inviteCode){
@@ -598,11 +612,6 @@
             return set(ref(db, "invites/" + code), householdId);
           }).then(function(){
             return set(ref(db, "households/" + householdId + "/inviteCode"), code);
-          });
-        }
-        if(!meta.notifyTopic){
-          chain = chain.then(function(){
-            return set(ref(db, "households/" + householdId + "/notifyTopic"), "kakeibo-" + randomHouseholdId());
           });
         }
         if(!meta.hasMyInfo && email){
@@ -639,17 +648,23 @@
       // （メンバーが0人の世帯は、世帯IDを知っている人が「最初のメンバー」として
       //   登録できてしまうため、データを残さないようにしている）。
       leaveHousehold: function(householdId, uid, isLastMember, inviteCode){
+        // 古いルールのデータベースには存在しない場所（memberInfo等）は、
+        // 削除が拒否されても先へ進む（ignore）。記録データとメンバー登録の削除は必須。
+        const ignore = function(){};
         let chain = Promise.resolve();
         if(isLastMember){
-          ["incomes","expenses","savings","budgets","budgetsByMonth","settings","notifyTopic","inviteCode"].forEach(function(p){
+          ["incomes","expenses","savings","budgets"].forEach(function(p){
             chain = chain.then(function(){ return remove(ref(db, "households/" + householdId + "/" + p)); });
           });
+          ["budgetsByMonth","settings","notifyTopic","inviteCode"].forEach(function(p){
+            chain = chain.then(function(){ return remove(ref(db, "households/" + householdId + "/" + p)).catch(ignore); });
+          });
           if(inviteCode){
-            chain = chain.then(function(){ return remove(ref(db, "invites/" + inviteCode)); });
+            chain = chain.then(function(){ return remove(ref(db, "invites/" + inviteCode)).catch(ignore); });
           }
         }
         return chain.then(function(){
-          return remove(ref(db, "households/" + householdId + "/memberInfo/" + uid));
+          return remove(ref(db, "households/" + householdId + "/memberInfo/" + uid)).catch(ignore);
         }).then(function(){
           return remove(ref(db, "households/" + householdId + "/members/" + uid));
         }).then(function(){
@@ -720,6 +735,33 @@
   // 世帯の付帯情報（招待コード・通知トピック名・メンバー一覧）。リアルタイム共有中のみ使う。
   let householdMeta = { inviteCode: null, notifyTopic: null, members: {}, memberInfo: {} };
   let householdMetaFailed = false;
+  // データベースのルールが新しい版か（ログイン時に調べる）。古いルールのままでも、
+  // 記録・編集・検索などはすべて使え、招待コードの作り直し・メンバーを外す・
+  // カテゴリー追加・月ごとの予算だけが「ルール更新後に使える」表示になる。
+  let rulesV2 = false;
+  // 通知トピック名（作り直していない世帯では、世帯IDから計算した値を使う）
+  let hashTopic = null;
+  // 世帯ごとの設定（カテゴリー追加・月ごとの予算）を保存できるか。
+  // ログインしていない場合（端末内保存）や、新しいルールの場合は使える。
+  function canUseHouseholdSettings(){
+    return !HOUSEHOLD_ID || rulesV2;
+  }
+  // 通知トピック名。世帯IDそのものを使うと、トピック名から世帯IDが分かってしまうため、
+  // 世帯IDのハッシュ値（SHA-256）から作る。データベースへの書き込みが不要なので、
+  // 古いルールのままでも使える。
+  function computeHashTopic(){
+    hashTopic = null;
+    if(!HOUSEHOLD_ID || !(window.crypto && window.crypto.subtle && window.TextEncoder)) return Promise.resolve();
+    return window.crypto.subtle.digest("SHA-256", new TextEncoder().encode("kakeibo-topic:" + HOUSEHOLD_ID)).then(function(buf){
+      const bytes = new Uint8Array(buf);
+      let hex = "";
+      for(let i=0; i<12; i++){ hex += ("0" + bytes[i].toString(16)).slice(-2); }
+      hashTopic = "kakeibo-" + hex;
+    }).catch(function(e){ console.log("通知トピック名を作れませんでした:", e); });
+  }
+  function currentNotifyTopic(){
+    return (householdMeta && householdMeta.notifyTopic) || hashTopic;
+  }
   const el = id => document.getElementById(id);
   const yen = n => "¥" + Math.round(n).toLocaleString("ja-JP");
   // 一部の古いブラウザ・組み込みブラウザでは NodeList.forEach が使えないため、
@@ -946,10 +988,10 @@
   // 以前のバージョンで作った世帯には、招待コード・通知トピック名・メンバーの
   // メールアドレスが無いため、起動時に自動で用意する。
   function maybeSetupHouseholdMeta(){
-    if(!(window.firebaseSync && window.firebaseSync.setupHouseholdMeta) || !currentUser || !HOUSEHOLD_ID) return;
+    if(!rulesV2 || !(window.firebaseSync && window.firebaseSync.setupHouseholdMeta) || !currentUser || !HOUSEHOLD_ID) return;
     const myInfo = householdMeta.memberInfo && householdMeta.memberInfo[currentUser.uid];
     const hasMyInfo = !!(myInfo && myInfo.email === currentUser.email);
-    if(householdMeta.inviteCode && householdMeta.notifyTopic && hasMyInfo) return;
+    if(householdMeta.inviteCode && hasMyInfo) return;
     window.firebaseSync.setupHouseholdMeta(HOUSEHOLD_ID, currentUser.uid, currentUser.email, {
       inviteCode: householdMeta.inviteCode,
       notifyTopic: householdMeta.notifyTopic,
@@ -1054,7 +1096,7 @@
   // (2) 通知の本文には金額・メモなどの家計の中身を載せない。
   // 送信に失敗してもアプリの他の機能には一切影響しない（あくまで補助的な機能のため）。
   function sendNtfyNotification(kind, action){
-    const topic = householdMeta && householdMeta.notifyTopic;
+    const topic = currentNotifyTopic();
     if(!topic) return;
     try{
       fetch("https://ntfy.sh/", {
@@ -2196,7 +2238,11 @@
       <div class="card">
         <h2>招待コード</h2>
         <p class="hint">パートナーにこのコードを伝えると、同じ家計に参加できます。コードが他の人に知られてしまった場合は「作り直す」を押してください（古いコードは使えなくなります）。</p>
-        ${householdMeta.inviteCode ? `
+        ${!rulesV2 ? `
+          <div class="field"><label>招待コード</label><input type="text" id="mypage-invite-code" readonly value="${escapeHtml(HOUSEHOLD_ID)}"></div>
+          <div class="btn-row"><button class="ghost-btn" id="mypage-copy-invite">コピーする</button></div>
+          <p class="hint" style="margin:10px 0 0;">データベースのルールを新しい版に更新すると、作り直しができる短い招待コード（12文字）に自動で切り替わります。</p>`
+        : householdMeta.inviteCode ? `
           <div class="field"><label>招待コード</label><input type="text" id="mypage-invite-code" readonly value="${escapeHtml(formatInviteCode(householdMeta.inviteCode))}"></div>
           <div class="btn-row">
             <button class="ghost-btn" id="mypage-copy-invite">コピーする</button>
@@ -2205,13 +2251,15 @@
       </div>
       <div class="card">
         <h2>この家計のメンバー</h2>
-        <p class="hint">知らないメンバーがいる場合は「外す」を押してください。外したあとは、招待コードも自動で作り直します。</p>
+        <p class="hint">${rulesV2
+          ? "知らないメンバーがいる場合は「外す」を押してください。外したあとは、招待コードも自動で作り直します。"
+          : "この家計に参加しているアカウントは " + memberIds.length + " 件です。ご夫婦の2件より多い場合は、知らない人が参加している可能性があります。データベースのルールを新しい版に更新すると、メールアドレスの表示と「外す」が使えるようになります。"}</p>
         <ul class="member-list">
           ${memberIds.map(function(mid){
             const me = mid === currentUser.uid;
             return `<li>
               <span class="member-name">${escapeHtml(memberDisplayName(mid))}${me ? `<span class="me-tag">あなた</span>` : ""}</span>
-              ${me ? "" : `<button class="ghost-btn danger-btn member-remove" data-uid="${escapeHtml(mid)}">外す</button>`}
+              ${(me || !rulesV2) ? "" : `<button class="ghost-btn danger-btn member-remove" data-uid="${escapeHtml(mid)}">外す</button>`}
             </li>`;
           }).join("") || `<li class="empty-row">メンバー情報を読み込めませんでした</li>`}
         </ul>
@@ -2220,12 +2268,12 @@
       <div class="card">
         <h2>スマートフォン通知</h2>
         <p class="hint">ntfyアプリ（無料）でこのトピック名を購読すると、記録の追加・修正・削除のたびにスマートフォンへ通知が届きます。トピック名を知っている人は誰でも通知を受け取れるため、通知には金額やメモは載せていません。トピック名が他の人に知られた場合は「作り直す」を押し、新しいトピック名を購読し直してください。</p>
-        ${householdMeta.notifyTopic ? `
-          <div class="field"><label>通知トピック名</label><input type="text" id="mypage-notify-topic" readonly value="${escapeHtml(householdMeta.notifyTopic)}"></div>
+        ${currentNotifyTopic() ? `
+          <div class="field"><label>通知トピック名</label><input type="text" id="mypage-notify-topic" readonly value="${escapeHtml(currentNotifyTopic())}"></div>
           <div class="btn-row">
             <button class="ghost-btn" id="mypage-copy-topic">コピーする</button>
-            <button class="ghost-btn" id="mypage-regen-topic">作り直す</button>
-          </div>` : metaMissingMsg}
+            ${rulesV2 ? `<button class="ghost-btn" id="mypage-regen-topic">作り直す</button>` : ""}
+          </div>` : `<p class="hint warn-text">このブラウザでは通知トピック名を作れませんでした（https で開いているかご確認ください）。</p>`}
       </div>
       <div class="card">
         <h2>メールアドレスの変更</h2>
@@ -2238,7 +2286,7 @@
         <button class="add-btn" id="mypage-change-password" style="width:100%;">変更する</button>
       </div>
       ` : ""}
-      <div class="card">
+      ${canUseHouseholdSettings() ? `<div class="card">
         <h2>支出カテゴリーの追加</h2>
         <p class="hint">固定費・変動費のカテゴリーを追加できます（例：保育料、おむつ・ミルク）。追加したカテゴリーは、家計のメンバー全員の画面に表示されます。削除しても、そのカテゴリーで記録済みの支出は消えません。</p>
         <div class="cat-add-form">
@@ -2253,7 +2301,10 @@
           ${extraFixed.map(function(n){ return `<li><span class="member-name">固定費：${escapeHtml(n)}</span><button class="ghost-btn cat-remove" data-type="fixed" data-name="${escapeHtml(n)}">削除</button></li>`; }).join("")}
           ${extraVariable.map(function(n){ return `<li><span class="member-name">変動費：${escapeHtml(n)}</span><button class="ghost-btn cat-remove" data-type="variable" data-name="${escapeHtml(n)}">削除</button></li>`; }).join("")}
         </ul>` : `<p class="hint" style="margin:10px 0 0;">追加したカテゴリーはまだありません。</p>`}
-      </div>
+      </div>` : `<div class="card">
+        <h2>支出カテゴリーの追加</h2>
+        <p class="hint" style="margin:0;">データベースのルールを新しい版に更新すると使えるようになります。</p>
+      </div>`}
       <div class="card">
         <h2>データの書き出し・読み込み</h2>
         <p class="hint">${storageMode === "realtime" ? "リアルタイム共有中は基本的に不要ですが、バックアップとしてお使いいただけます。" : "この端末ともう一方の端末のデータをまとめるときに使います。"}CSVは、ExcelやNumbersで開いて集計するときに使えます。</p>
@@ -2278,7 +2329,7 @@
     };
 
     // カテゴリーの追加・削除
-    el("cat-add-btn").onclick = function(){
+    if(el("cat-add-btn")) el("cat-add-btn").onclick = function(){
       const type = el("cat-add-type").value;
       const name = el("cat-add-name").value.trim().replace(/\s+/g, " ");
       if(!name){ el("cat-add-name").focus(); return; }
@@ -2308,8 +2359,10 @@
     if(loggedIn){
       if(el("mypage-copy-invite")){
         el("mypage-copy-invite").onclick = function(){
-          copyText(formatInviteCode(householdMeta.inviteCode), "招待コードをコピーしました。");
+          copyText(rulesV2 ? formatInviteCode(householdMeta.inviteCode) : HOUSEHOLD_ID, "招待コードをコピーしました。");
         };
+      }
+      if(el("mypage-regen-invite")){
         el("mypage-regen-invite").onclick = function(){
           if(!confirm("招待コードを作り直しますか？今のコードは使えなくなります（すでに参加しているメンバーには影響しません）。")) return;
           window.firebaseSync.regenerateInviteCode(HOUSEHOLD_ID, householdMeta.inviteCode).then(function(){
@@ -2319,8 +2372,10 @@
       }
       if(el("mypage-copy-topic")){
         el("mypage-copy-topic").onclick = function(){
-          copyText(householdMeta.notifyTopic, "通知トピック名をコピーしました。");
+          copyText(currentNotifyTopic(), "通知トピック名をコピーしました。");
         };
+      }
+      if(el("mypage-regen-topic")){
         el("mypage-regen-topic").onclick = function(){
           if(!confirm("通知トピック名を作り直しますか？通知を受け取るには、ntfyアプリで新しいトピック名を購読し直す必要があります。")) return;
           window.firebaseSync.regenerateNotifyTopic(HOUSEHOLD_ID).then(function(){
@@ -2517,7 +2572,7 @@
         const val = current[c.key] || "";
         return `<div class="field"><label>${escapeHtml(c.key)}</label><input type="number" min="0" inputmode="numeric" class="budget-input" data-cat="${escapeHtml(c.key)}" value="${val}" placeholder="例：60000"></div>`;
       }).join("")}
-      <label class="check-row"><input type="checkbox" id="budgetMonthOnly" ${monthOnly ? "checked" : ""}><span>${monthLabel(currentMonth)}だけの予算として保存する（チェックしない場合は、毎月共通の予算になります）</span></label>
+      <label class="check-row" ${canUseHouseholdSettings() ? "" : "hidden"}><input type="checkbox" id="budgetMonthOnly" ${monthOnly ? "checked" : ""}><span>${monthLabel(currentMonth)}だけの予算として保存する（チェックしない場合は、毎月共通の予算になります）</span></label>
       <button class="add-btn" id="budgetSaveBtn" style="width:100%;">予算を保存する</button>
       ${monthOnly ? `<button class="ghost-btn" id="budgetMonthResetBtn" style="width:100%;margin-top:8px;">${monthLabel(currentMonth)}の個別予算を削除して、毎月共通の予算に戻す</button>` : ""}
     `;
@@ -2630,14 +2685,14 @@
         <input type="file" id="receiptFileInput" accept="image/*" capture="environment" style="display:none">
         <div id="receiptStatus"></div>
       </div>` +
-      expenseTable("fixed", "固定費を入力する", "固定費", "毎月ほぼ一定額かかる支出です（家賃・住宅ローン、光熱費、通信費、保険料、サブスクなど）。カテゴリーはマイページから追加できます。") +
+      expenseTable("fixed", "固定費を入力する", "固定費", "毎月ほぼ一定額かかる支出です（家賃・住宅ローン、光熱費、通信費、保険料、サブスクなど）。" + (canUseHouseholdSettings() ? "カテゴリーはマイページから追加できます。" : "")) +
       `<div class="card" style="margin-top:-8px;">
         <button class="ghost-btn" id="copyLastMonthFixedBtn" style="width:100%;">📋 先月の固定費をコピーする</button>
         <p class="hint" style="margin-top:8px;margin-bottom:0;">先月登録した固定費（家賃・光熱費など）を、今月分としてまとめてコピーします。同じ内容がすでに今月にあるものはコピーしません。金額が変わっていれば、コピー後に一覧の ✎ ボタンから修正してください。</p>
       </div>` +
       `<div class="card budget-panel">
         <h2>💰 変動費の予算${hasMonthBudget(currentMonth) ? `<span class="month-budget-tag">${monthLabel(currentMonth)}は個別の予算</span>` : ""}</h2>
-        <p class="hint">食費や日用品など、カテゴリーごとに毎月の目安予算を設定すると、ダッシュボードの内訳に達成率が表示されます。帰省やイベントのある月だけ、別の予算にすることもできます。</p>
+        <p class="hint">食費や日用品など、カテゴリーごとに毎月の目安予算を設定すると、ダッシュボードの内訳に達成率が表示されます。${canUseHouseholdSettings() ? "帰省やイベントのある月だけ、別の予算にすることもできます。" : ""}</p>
         <button class="ghost-btn" id="budgetToggleBtn" style="width:100%;">予算を設定する</button>
         <div id="budgetEditArea" class="budget-edit-area" hidden></div>
       </div>` +
@@ -3184,7 +3239,7 @@
 
   function init(){
     try{
-      loadData().then(function(){
+      computeHashTopic().then(loadData).then(function(){
         render();
         activeTab = "income";
         renderTabs();
@@ -3265,7 +3320,7 @@
         <h2>家計を始める</h2>
         <p class="hint">ログインしました（${escapeHtml(user.email || "")}）。新しく家計を作成するか、パートナーや友人から共有された招待コードを入力して参加してください。</p>
         <button class="add-btn" id="hh-create-btn" style="width:100%;margin-bottom:18px;">新しい家計を始める</button>
-        <div class="field"><label>招待コード（パートナー・友人から共有されたもの）</label><input type="text" id="hh-code-input" autocapitalize="characters" autocomplete="off" placeholder="例：ABCD-EFGH-JKLM"></div>
+        <div class="field"><label>招待コード（パートナー・友人から共有されたもの）</label><input type="text" id="hh-code-input" ${rulesV2 ? 'autocapitalize="characters"' : 'autocapitalize="off"'} autocomplete="off" placeholder="${rulesV2 ? "例：ABCD-EFGH-JKLM" : "パートナーのマイページに表示される招待コード"}"></div>
         <button class="ghost-btn" id="hh-join-btn" style="width:100%;">招待コードで参加する</button>
         <p class="hint" style="margin-top:10px;">すでにパートナーが使っている家計に参加する場合は、パートナーの「マイページ」に表示される招待コードを入力してください。</p>
         ${errorMsg ? `<p style="color:var(--danger);font-size:12.5px;margin:12px 0 0;">${escapeHtml(errorMsg)}</p>` : ""}
@@ -3283,13 +3338,20 @@
       });
     };
     el("hh-join-btn").onclick = function(){
-      // 大文字・小文字やハイフン・空白の違いは気にせず入力できるようにする
-      const code = toHalfWidth(el("hh-code-input").value).toUpperCase().replace(/[^A-Z0-9]/g, "");
+      // 新しいルール：大文字・小文字やハイフン・空白の違いは気にせず入力できるようにする。
+      // 古いルール：招待コード＝世帯ID（大文字・小文字を区別する）をそのまま使う。
+      const raw = toHalfWidth(el("hh-code-input").value);
+      const code = rulesV2 ? raw.toUpperCase().replace(/[^A-Z0-9]/g, "") : raw.replace(/\s/g, "");
       if(!code){
         renderHouseholdSetup(user, resolve, "招待コードを入力してください。");
         return;
       }
-      window.firebaseSync.joinHousehold(user.uid, code).then(function(id){
+      if(!rulesV2 && /[.#$\[\]\/]/.test(code)){
+        renderHouseholdSetup(user, resolve, "招待コードに使えない文字が含まれています。");
+        return;
+      }
+      const join = rulesV2 ? window.firebaseSync.joinHousehold : window.firebaseSync.joinHouseholdLegacy;
+      join(user.uid, code).then(function(id){
         resolve(id);
       }).catch(function(e){
         console.error(e);
@@ -3326,7 +3388,10 @@
       window.firebaseSync.auth.onChange(function(user){
         if(user){
           currentUser = user;
-          resolveHousehold(user).then(function(id){
+          window.firebaseSync.probeRulesV2().then(function(v){
+            rulesV2 = !!v;
+            return resolveHousehold(user);
+          }).then(function(id){
             HOUSEHOLD_ID = id;
             if(!started){ started = true; init(); }
           }).catch(function(e){
