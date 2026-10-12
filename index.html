@@ -217,7 +217,7 @@
   }
   .edit:hover{background:#E8EEF5;color:var(--indigo-deep);}
   .edit-row td{background:#F7F2E6;}
-  .edit-form{margin:2px 0;}
+  .edit-form{margin:2px 0;grid-template-columns:130px 140px 1fr 110px 110px auto;}
   .edit-actions{display:flex;gap:8px;}
   .edit-actions .add-btn,.edit-actions .ghost-btn{min-height:44px;}
   .empty-row{color:var(--ink-soft);font-size:13px;text-align:center;padding:22px 0;}
@@ -267,6 +267,38 @@
     z-index:50;
   }
   .save-status.show{opacity:1;transform:none;}
+  .save-status.error{background:var(--danger);max-width:calc(100% - 36px);border-radius:12px;line-height:1.6;}
+  .warn-text{color:var(--danger) !important;}
+  .btn-row{display:flex;gap:8px;margin-top:8px;}
+  .btn-row .ghost-btn{flex:1;min-height:38px;}
+  .danger-btn{color:var(--danger);border-color:#E7C3BE;}
+  .member-list{list-style:none;margin:0;padding:0;font-size:13.5px;}
+  .member-list li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px dashed var(--line);}
+  .member-list li:last-child{border-bottom:none;}
+  .member-name{min-width:0;word-break:break-all;}
+  .me-tag{font-size:10.5px;background:var(--indigo-deep);color:#fff;border-radius:999px;padding:1px 8px;margin-left:8px;white-space:nowrap;}
+  .cat-add-form{display:grid;grid-template-columns:120px 1fr auto;gap:10px;align-items:end;}
+  .check-row{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;color:var(--ink);margin:4px 0 12px;line-height:1.6;cursor:pointer;}
+  .check-row input{width:auto;margin-top:3px;flex-shrink:0;}
+  .budget-edit-area{margin-top:14px;}
+  .budget-edit-area .field{margin-bottom:8px;}
+  .month-budget-tag{font-family:inherit;font-size:11px;font-weight:500;background:#F6EED9;color:#8A5E10;border-radius:999px;padding:2px 9px;}
+  .receipt-actions{display:flex;gap:8px;flex-wrap:wrap;}
+  .receipt-actions .add-btn{flex:2;min-width:220px;white-space:normal;}
+  .receipt-actions .ghost-btn{flex:1;min-width:140px;min-height:44px;}
+  .receipt-paste{margin-top:12px;}
+  .receipt-paste textarea{
+    width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 10px;font-size:16px;
+    font-family:inherit;background:#FCFAF4;color:var(--ink);box-sizing:border-box;resize:vertical;
+  }
+  .search-form{display:grid;grid-template-columns:1fr 140px 150px 150px auto;gap:10px;align-items:end;}
+  .search-summary{font-size:13px;margin:16px 0 0;color:var(--ink-soft);}
+  .search-summary strong{color:var(--ink);font-variant-numeric:tabular-nums;}
+  .year-legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--ink-soft);margin:-4px 0 8px;}
+  .year-legend span{display:inline-flex;align-items:center;gap:6px;}
+  .year-chart{width:100%;}
+  .year-table td.minus{color:var(--danger);}
+  .year-table tr.is-current td{background:#F2F6FA;}
   .loading-screen{
     display:flex;align-items:center;justify-content:center;height:60vh;
     color:var(--ink-soft);font-size:14px;
@@ -314,8 +346,12 @@
     /* 日付欄はブラウザ標準のカレンダー部品を含み、他の項目と1行を分け合うと
        窮屈になりやすいため、2列レイアウトの間も常に1行を専有させる */
     .field-date{grid-column:1/-1;}
+    .edit-form{grid-template-columns:1fr 1fr;}
     .edit-actions{grid-column:1/-1;}
     .edit-actions .add-btn,.edit-actions .ghost-btn{flex:1;}
+    .search-form{grid-template-columns:1fr 1fr;}
+    .search-form .search-q{grid-column:1/-1;}
+    .search-form .field-date{grid-column:auto;}
     .stat-grid{grid-template-columns:1fr 1fr;}
     .charts,.breakdown{grid-template-columns:1fr;}
   }
@@ -339,6 +375,10 @@
     .ghost-btn{flex:1;}
     /* 編集フォームを開いている表は、横スクロールせずに画面幅へ収める */
     table.has-edit{min-width:0;}
+    .edit-form{grid-template-columns:minmax(0,1fr);}
+    .search-form{grid-template-columns:minmax(0,1fr);}
+    .search-form .field-date{grid-column:1;}
+    .cat-add-form{grid-template-columns:minmax(0,1fr);}
   }
 
   /* タッチ操作の端末（スマートフォン・タブレット）では、ボタンなどの
@@ -433,11 +473,28 @@
     appId: "1:242198106288:web:7770d4c13eef35d8972b75"
   };
 
-  // 招待コード（household ID）としてランダムな文字列を作るための簡易関数。
-  // Firebaseのpush()が生成するID相当の、ある程度衝突しにくい文字列を作る。
+  // 世帯（household）IDや通知トピック名に使う、推測されにくいランダムな文字列。
+  // 暗号用の乱数（crypto.getRandomValues）が使えればそれを使う。
+  function randomString(length, chars){
+    const out = [];
+    let arr = null;
+    try{
+      arr = new Uint32Array(length);
+      window.crypto.getRandomValues(arr);
+    }catch(e){ arr = null; }
+    for(let i=0; i<length; i++){
+      const r = arr ? arr[i] : Math.floor(Math.random() * 4294967296);
+      out.push(chars.charAt(r % chars.length));
+    }
+    return out.join("");
+  }
   function randomHouseholdId(){
-    const part = function(){ return Math.random().toString(36).slice(2, 10); };
-    return part() + part() + Date.now().toString(36);
+    return randomString(24, "abcdefghijklmnopqrstuvwxyz0123456789");
+  }
+  // 招待コード。世帯IDとは別の値にしておき、漏れたときは作り直せるようにする。
+  // 人が入力しやすいよう、紛らわしい文字（0/O、1/I/L）を除いた英大文字・数字12文字。
+  function randomInviteCode(){
+    return randomString(12, "ABCDEFGHJKMNPQRSTUVWXYZ23456789");
   }
 
   try{
@@ -510,20 +567,104 @@
           return snap.exists() ? snap.val() : null;
         });
       },
-      // 新しい世帯を作り、自分をその最初のメンバーとして登録する
+      // 新しい世帯を作り、自分をその最初のメンバーとして登録する。
+      // データベースのルール上、メンバーが1人もいない世帯にだけ「最初のメンバー」として
+      // 登録できるため、先にメンバー登録を済ませる（招待コード等は起動後に用意する）。
       createHousehold: function(uid){
         const id = randomHouseholdId();
-        const updates = {};
-        updates["households/" + id + "/members/" + uid] = true;
-        updates["users/" + uid + "/householdId"] = id;
-        return update(ref(db), updates).then(function(){ return id; });
+        return set(ref(db, "households/" + id + "/members/" + uid), true).then(function(){
+          return set(ref(db, "users/" + uid + "/householdId"), id);
+        }).then(function(){ return id; });
       },
-      // 招待コード（既存のhousehold ID）を使って、既存の世帯に参加する
-      joinHousehold: function(uid, householdId){
-        const updates = {};
-        updates["households/" + householdId + "/members/" + uid] = true;
-        updates["users/" + uid + "/householdId"] = householdId;
-        return update(ref(db), updates).then(function(){ return householdId; });
+      // 招待コードを使って既存の世帯に参加する。招待コードは世帯IDとは別の値で、
+      // invites/{招待コード} にその世帯のIDが入っている。メンバー登録の値として
+      // 招待コードを書き込み、ルール側で「現在の招待コードと一致するか」を確かめる。
+      joinHousehold: function(uid, code){
+        return get(ref(db, "invites/" + code)).then(function(snap){
+          if(!snap.exists()){ throw new Error("invite-not-found"); }
+          const householdId = snap.val();
+          return set(ref(db, "households/" + householdId + "/members/" + uid), code).then(function(){
+            return set(ref(db, "users/" + uid + "/householdId"), householdId);
+          }).then(function(){ return householdId; });
+        });
+      },
+      // 招待コード・通知トピック名・自分のメンバー情報（メールアドレス）が
+      // まだ無い世帯（以前のバージョンで作った世帯など）に、それらを用意する。
+      setupHouseholdMeta: function(householdId, uid, email, meta){
+        let chain = Promise.resolve();
+        if(!meta.inviteCode){
+          const code = randomInviteCode();
+          chain = chain.then(function(){
+            return set(ref(db, "invites/" + code), householdId);
+          }).then(function(){
+            return set(ref(db, "households/" + householdId + "/inviteCode"), code);
+          });
+        }
+        if(!meta.notifyTopic){
+          chain = chain.then(function(){
+            return set(ref(db, "households/" + householdId + "/notifyTopic"), "kakeibo-" + randomHouseholdId());
+          });
+        }
+        if(!meta.hasMyInfo && email){
+          chain = chain.then(function(){
+            return set(ref(db, "households/" + householdId + "/memberInfo/" + uid), { email: email });
+          });
+        }
+        return chain;
+      },
+      // 招待コードを作り直す。新しいコードを登録してから、古いコードを無効にする。
+      regenerateInviteCode: function(householdId, oldCode){
+        const code = randomInviteCode();
+        return set(ref(db, "invites/" + code), householdId).then(function(){
+          return set(ref(db, "households/" + householdId + "/inviteCode"), code);
+        }).then(function(){
+          if(oldCode){
+            return remove(ref(db, "invites/" + oldCode)).catch(function(e){
+              console.log("古い招待コードの削除に失敗しました:", e);
+            });
+          }
+        }).then(function(){ return code; });
+      },
+      regenerateNotifyTopic: function(householdId){
+        const topic = "kakeibo-" + randomHouseholdId();
+        return set(ref(db, "households/" + householdId + "/notifyTopic"), topic).then(function(){ return topic; });
+      },
+      // ほかのメンバーをこの世帯から外す
+      removeMember: function(householdId, uid){
+        return remove(ref(db, "households/" + householdId + "/memberInfo/" + uid)).then(function(){
+          return remove(ref(db, "households/" + householdId + "/members/" + uid));
+        });
+      },
+      // 自分がこの世帯から抜ける。最後の1人の場合は、世帯のデータをすべて消してから抜ける
+      // （メンバーが0人の世帯は、世帯IDを知っている人が「最初のメンバー」として
+      //   登録できてしまうため、データを残さないようにしている）。
+      leaveHousehold: function(householdId, uid, isLastMember, inviteCode){
+        let chain = Promise.resolve();
+        if(isLastMember){
+          ["incomes","expenses","savings","budgets","budgetsByMonth","settings","notifyTopic","inviteCode"].forEach(function(p){
+            chain = chain.then(function(){ return remove(ref(db, "households/" + householdId + "/" + p)); });
+          });
+          if(inviteCode){
+            chain = chain.then(function(){ return remove(ref(db, "invites/" + inviteCode)); });
+          }
+        }
+        return chain.then(function(){
+          return remove(ref(db, "households/" + householdId + "/memberInfo/" + uid));
+        }).then(function(){
+          return remove(ref(db, "households/" + householdId + "/members/" + uid));
+        }).then(function(){
+          return remove(ref(db, "users/" + uid + "/householdId"));
+        });
+      },
+      // 世帯から外された場合などに、自分の「所属世帯」の記録だけを消す
+      clearUserHousehold: function(uid){
+        return remove(ref(db, "users/" + uid + "/householdId"));
+      },
+      // 世帯のデータの一部（予算・月別予算・カテゴリー設定・個々の記録など）を
+      // 書き換える。value に null を渡すと、そのパスを削除する。
+      writeHouseholdPath: function(householdId, path, value){
+        const r = ref(db, "households/" + householdId + "/" + path);
+        return (value === null || value === undefined) ? remove(r) : set(r, value);
       }
     };
   }catch(e){
@@ -569,14 +710,16 @@
   ];
 
   const STORAGE_KEY = "budget-data-v1";
-  // 以前の固定の合言葉（ログイン機能を追加する前に使っていたもの）。
-  // すでにこのIDでデータを入力していた場合、ログイン後に「招待コードで参加する」に
-  // この値を入力すれば、これまでのデータにそのままアクセスできる。
-  const LEGACY_HOUSEHOLD_ID = "UtepwPCAX6u3pqPDwkGV7fW6JKQwPEMg";
   // ログイン・世帯（household）の参加状況に応じて、実行時に決まる値。
   // ログイン前や世帯未参加の間は null のまま。
+  // ※以前はログイン機能を追加する前の世帯IDをここに書き、画面にも表示していたが、
+  //   公開リポジトリから誰でも読めてしまうため削除した。現在は世帯IDとは別の
+  //   「招待コード」でのみ参加できる（設計書 13.3節）。
   let HOUSEHOLD_ID = null;
   let currentUser = null;
+  // 世帯の付帯情報（招待コード・通知トピック名・メンバー一覧）。リアルタイム共有中のみ使う。
+  let householdMeta = { inviteCode: null, notifyTopic: null, members: {}, memberInfo: {} };
+  let householdMetaFailed = false;
   const el = id => document.getElementById(id);
   const yen = n => "¥" + Math.round(n).toLocaleString("ja-JP");
   // 一部の古いブラウザ・組み込みブラウザでは NodeList.forEach が使えないため、
@@ -584,10 +727,15 @@
   function each(nodeList, fn){
     for(let i=0; i<nodeList.length; i++){ fn(nodeList[i], i); }
   }
-  const todayStr = () => new Date().toISOString().slice(0,10);
+  // 端末の現地時刻での日付（YYYY-MM-DD）。以前は toISOString()（世界標準時）を
+  // 使っていたため、日本時間の 0:00〜8:59 は前日の日付になっていた。
+  function localDateStr(d){
+    return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+  }
+  const todayStr = () => localDateStr(new Date());
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
 
-  let data = { incomes: [], expenses: [], savings: [], budgets: {} };
+  let data = { incomes: [], expenses: [], savings: [], budgets: {}, budgetsByMonth: {}, settings: {} };
   let currentMonth = todayStr().slice(0,7); // YYYY-MM
   let activeTab = "income";
   // currentPage: "main" = 収支の記録・ダッシュボード / "mypage" = マイページ（設定）
@@ -600,16 +748,36 @@
   //              "realtime" = Firebase Realtime Databaseでの即時共有
   //              "local"    = この端末のブラウザ内保存のみ
   let storageMode = "local";
+  // ログインしているのに共有サーバーへつながらず、一時的に端末内保存になっている状態。
+  // この間の操作は「未送信」として控えておき、つながった時点で自動的に送る。
+  let realtimeFallback = false;
+
+  // 読み込んだ記録のうち、日付・金額が壊れているものを取り除く
+  // （1件でも想定外のデータがあると画面全体が表示できなくなるのを防ぐ）。
+  function cleanRecords(list){
+    if(!Array.isArray(list)) return [];
+    return list.filter(function(x){
+      return x && typeof x === "object" && typeof x.date === "string" && x.date.length >= 10
+        && typeof x.amount === "number" && isFinite(x.amount) && x.id;
+    }).map(function(x){
+      if(typeof x.category !== "string") x.category = String(x.category == null ? "" : x.category);
+      if(x.memo != null && typeof x.memo !== "string") x.memo = String(x.memo);
+      return x;
+    });
+  }
+  function plainObject(v){ return (v && typeof v === "object" && !Array.isArray(v)) ? v : {}; }
 
   function applyParsed(parsed){
-    data.incomes = (parsed && parsed.incomes) || [];
-    data.expenses = (parsed && parsed.expenses) || [];
-    data.savings = (parsed && parsed.savings) || [];
-    data.budgets = (parsed && parsed.budgets) || {};
+    data.incomes = cleanRecords(parsed && parsed.incomes);
+    data.expenses = cleanRecords(parsed && parsed.expenses);
+    data.savings = cleanRecords(parsed && parsed.savings);
+    data.budgets = plainObject(parsed && parsed.budgets);
+    data.budgetsByMonth = plainObject(parsed && parsed.budgetsByMonth);
+    data.settings = plainObject(parsed && parsed.settings);
   }
 
   function objectToArray(obj){
-    if(!obj) return [];
+    if(!obj || typeof obj !== "object") return [];
     return Object.keys(obj).map(function(id){
       const rec = Object.assign({}, obj[id]);
       rec.id = id;
@@ -618,29 +786,103 @@
   }
 
   function applyFirebaseSnapshot(val){
-    data.incomes = objectToArray(val && val.incomes);
-    data.expenses = objectToArray(val && val.expenses);
-    data.savings = objectToArray(val && val.savings);
-    data.budgets = (val && val.budgets) || {};
+    data.incomes = cleanRecords(objectToArray(val && val.incomes));
+    data.expenses = cleanRecords(objectToArray(val && val.expenses));
+    data.savings = cleanRecords(objectToArray(val && val.savings));
+    data.budgets = plainObject(val && val.budgets);
+    data.budgetsByMonth = plainObject(val && val.budgetsByMonth);
+    data.settings = plainObject(val && val.settings);
+    householdMeta = {
+      inviteCode: (val && val.inviteCode) || null,
+      notifyTopic: (val && val.notifyTopic) || null,
+      members: plainObject(val && val.members),
+      memberInfo: plainObject(val && val.memberInfo)
+    };
+    // つながらなくなったときに直前の内容を表示できるよう、端末にも控えておく
+    try{ localStorage.setItem(cacheKey(), JSON.stringify(data)); }catch(e){}
+  }
+
+  // ---------- 共有サーバーにつながらない間の、端末内の控え ----------
+  function cacheKey(){ return "budget-cache-" + HOUSEHOLD_ID; }
+  function pendingKey(){ return "budget-pending-" + HOUSEHOLD_ID; }
+  function readPending(){
+    try{
+      const raw = localStorage.getItem(pendingKey());
+      const list = raw ? JSON.parse(raw) : [];
+      return Array.isArray(list) ? list : [];
+    }catch(e){ return []; }
+  }
+  // 未送信の操作を1件控える。path は世帯の中の場所（例："expenses/abc"）、
+  // value は書き込む内容（null なら削除）。
+  function queuePending(path, value){
+    if(!realtimeFallback || !HOUSEHOLD_ID) return;
+    const list = readPending();
+    list.push({ path: path, value: (value === undefined ? null : value) });
+    try{ localStorage.setItem(pendingKey(), JSON.stringify(list)); }catch(e){
+      console.error("未送信の操作を控えられませんでした:", e);
+    }
+  }
+  // 控えておいた操作を、古い順に1件ずつ共有サーバーへ送る。送った件数を返す。
+  function flushPending(){
+    const list = readPending();
+    if(!list.length || !(window.firebaseSync && window.firebaseSync.writeHouseholdPath)) return Promise.resolve(0);
+    let sent = 0;
+    let chain = Promise.resolve();
+    list.forEach(function(item){
+      chain = chain.then(function(){
+        return window.firebaseSync.writeHouseholdPath(HOUSEHOLD_ID, item.path, item.value).then(function(){ sent++; });
+      });
+    });
+    return chain.then(function(){
+      try{ localStorage.removeItem(pendingKey()); }catch(e){}
+      return sent;
+    }).catch(function(e){
+      console.error("未送信の操作の一部を送れませんでした:", e);
+      // 送れた分だけ控えから取り除く
+      try{ localStorage.setItem(pendingKey(), JSON.stringify(list.slice(sent))); }catch(e2){}
+      showError("端末に控えていた記録の一部を共有できませんでした。再読み込みしてお試しください。");
+      return sent;
+    });
   }
 
   // 注意：このアプリはスマートフォンの標準ブラウザや、機種・アプリ内ブラウザの違いによる
   // 互換性の問題を避けるため、意図的に async/await を使わず Promise の .then()/.catch() で
   // 非同期処理を記述している（一部の組み込みブラウザでは async 構文の解釈に失敗することがあるため）。
-  function loadLocalFallback(){
+  // fromRealtime=true：ログイン中に共有サーバーへつながらなかった場合。直前に共有から
+  // 受け取った内容（端末内の控え）を表示し、以降の操作を「未送信」として控える。
+  function loadLocalFallback(fromRealtime){
     storageMode = "local";
+    realtimeFallback = !!(fromRealtime && HOUSEHOLD_ID);
     try{
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = localStorage.getItem(realtimeFallback ? cacheKey() : STORAGE_KEY);
       if(raw) applyParsed(JSON.parse(raw));
     }catch(e){
       console.log("この端末内保存も利用できません:", e);
     }
   }
 
+  function isPermissionError(err){
+    return !!err && /permission/i.test(String(err.code || "") + " " + String(err.message || ""));
+  }
+
+  // 世帯から外された（または世帯がなくなった）ときの処理。
+  // 所属世帯の記録を消して再読み込みし、招待コードの入力画面に戻す。
+  let leavingHousehold = false; // 自分で「抜ける」を押したときは、権限がなくなっても警告を出さない
+  function handleLostHouseholdAccess(){
+    if(leavingHousehold) return;
+    alert("この家計を表示する権限がありません（メンバーから外された可能性があります）。招待コードを入力して参加し直してください。");
+    const done = function(){ location.reload(); };
+    if(currentUser && window.firebaseSync && window.firebaseSync.clearUserHousehold){
+      window.firebaseSync.clearUserHousehold(currentUser.uid).then(done, done);
+    }else{
+      done();
+    }
+  }
+
   // Firebaseが設定されていればリアルタイム共有を試み、ダメなら端末内保存に切り替える。
   function tryRealtimeThenLocal(resolve){
     if(!(window.firebaseSync && window.firebaseSync.configured)){
-      loadLocalFallback();
+      loadLocalFallback(false);
       resolve();
       return;
     }
@@ -648,10 +890,10 @@
     const timeoutId = setTimeout(function(){
       if(settled) return;
       settled = true;
-      console.log("リアルタイム共有への接続がタイムアウトしたため、この端末内保存に切り替えます");
-      loadLocalFallback();
+      console.log("リアルタイム共有への接続がタイムアウトしたため、一時的にこの端末内保存に切り替えます");
+      loadLocalFallback(true);
       resolve();
-    }, 6000);
+    }, 10000);
 
     window.firebaseSync.subscribe(HOUSEHOLD_ID, function(val){
       if(!settled){
@@ -660,20 +902,65 @@
         storageMode = "realtime";
         applyFirebaseSnapshot(val);
         startConnectionWatch();
+        maybeSetupHouseholdMeta();
         resolve();
-      }else{
-        // 2回目以降の呼び出し＝自分または相手の端末での変更がリアルタイムに届いたもの
+        return;
+      }
+      if(storageMode === "local" && realtimeFallback){
+        // 起動時にはつながらなかったが、あとから共有サーバーにつながった場合。
+        // 端末に控えておいた操作を送ってから、共有の内容に切り替える。
+        storageMode = "realtime";
+        realtimeFallback = false;
         applyFirebaseSnapshot(val);
+        startConnectionWatch();
+        maybeSetupHouseholdMeta();
         render();
         renderTabs();
+        flushPending().then(function(sent){
+          if(sent > 0) flashSaved("端末に控えていた" + sent + "件を共有しました");
+        });
+        return;
       }
+      // 2回目以降の呼び出し＝自分または相手の端末での変更がリアルタイムに届いたもの
+      applyFirebaseSnapshot(val);
+      render();
+      renderTabs();
     }, function(err){
-      if(settled) return;
+      if(settled){
+        // 表示中に読み取り権限がなくなった（メンバーから外された等）
+        if(isPermissionError(err)) handleLostHouseholdAccess();
+        return;
+      }
       settled = true;
       clearTimeout(timeoutId);
-      console.log("リアルタイム共有への接続に失敗したため、この端末内保存に切り替えます:", err);
-      loadLocalFallback();
+      if(isPermissionError(err) && currentUser){
+        handleLostHouseholdAccess();
+        return;
+      }
+      console.log("リアルタイム共有への接続に失敗したため、一時的にこの端末内保存に切り替えます:", err);
+      loadLocalFallback(true);
       resolve();
+    });
+  }
+
+  // 以前のバージョンで作った世帯には、招待コード・通知トピック名・メンバーの
+  // メールアドレスが無いため、起動時に自動で用意する。
+  function maybeSetupHouseholdMeta(){
+    if(!(window.firebaseSync && window.firebaseSync.setupHouseholdMeta) || !currentUser || !HOUSEHOLD_ID) return;
+    const myInfo = householdMeta.memberInfo && householdMeta.memberInfo[currentUser.uid];
+    const hasMyInfo = !!(myInfo && myInfo.email === currentUser.email);
+    if(householdMeta.inviteCode && householdMeta.notifyTopic && hasMyInfo) return;
+    window.firebaseSync.setupHouseholdMeta(HOUSEHOLD_ID, currentUser.uid, currentUser.email, {
+      inviteCode: householdMeta.inviteCode,
+      notifyTopic: householdMeta.notifyTopic,
+      hasMyInfo: hasMyInfo
+    }).then(function(){
+      householdMetaFailed = false;
+    }).catch(function(e){
+      // Firebaseのルールが古いままだと、招待コード等を書き込めない
+      console.error("招待コード等の準備に失敗しました（Firebaseのルールが古い可能性があります）:", e);
+      householdMetaFailed = true;
+      if(currentPage === "mypage") renderMyPage();
     });
   }
 
@@ -682,8 +969,11 @@
   // 切断直後の一瞬の揺らぎで警告が出ないよう、少し待ってから判定する。
   let connectionLost = false;
   let hasConnectedOnce = false;
+  let connectionWatchStarted = false;
   function startConnectionWatch(){
+    if(connectionWatchStarted) return;
     if(!(window.firebaseSync && window.firebaseSync.watchConnection)) return;
+    connectionWatchStarted = true;
     window.firebaseSync.watchConnection(function(isConnected){
       if(isConnected){
         hasConnectedOnce = true;
@@ -719,16 +1009,17 @@
     });
   }
 
-  // isCloud時代の一括保存（共有ストレージ／端末内保存の両モードで使用。
+  // 一括保存（共有ストレージ／端末内保存の両モードで使用。
   // realtimeモードはレコード単位で保存するため saveData() は使わない）
   function saveData(){
     const json = JSON.stringify(data);
     function saveLocal(){
       try{
-        localStorage.setItem(STORAGE_KEY, json);
+        localStorage.setItem(realtimeFallback ? cacheKey() : STORAGE_KEY, json);
         flashSaved();
       }catch(e){
         console.error("保存エラー:", e);
+        showError("この端末に保存できませんでした。ブラウザの設定（プライベートモード等）をご確認ください。");
       }
     }
     if(storageMode === "cloud"){
@@ -750,8 +1041,6 @@
     return Promise.resolve();
   }
 
-  // 追加・削除の1件ごとの永続化。realtimeモードのときはFirebaseの該当パスのみを
-  // 書き換える（レコード単位）。それ以外のモードでは全体を書き直す従来方式のまま。
   function kindLabel(kind){
     if(kind === "incomes") return "収入";
     if(kind === "expenses") return "支出";
@@ -760,15 +1049,18 @@
   }
 
   // スマートフォンへの通知（ntfy.sh、無料・登録不要のプッシュ通知サービス）。
-  // 世帯（household）ごとに固有の通知トピックへ送信する。送信に失敗しても
-  // アプリの他の機能には一切影響しない（あくまで補助的な機能のため）。
-  function sendNtfyNotification(title, message){
-    if(!HOUSEHOLD_ID) return;
+  // ntfy.sh のトピックは名前を知っていれば誰でも購読できるため、
+  // (1) トピック名は世帯ID・招待コードとは別のランダムな値にし、
+  // (2) 通知の本文には金額・メモなどの家計の中身を載せない。
+  // 送信に失敗してもアプリの他の機能には一切影響しない（あくまで補助的な機能のため）。
+  function sendNtfyNotification(kind, action){
+    const topic = householdMeta && householdMeta.notifyTopic;
+    if(!topic) return;
     try{
       fetch("https://ntfy.sh/", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({ topic: "kakeibo-" + HOUSEHOLD_ID, title: title, message: message })
+        body: JSON.stringify({ topic: topic, title: "ふたり家計簿", message: kindLabel(kind) + "の記録が1件" + action + "されました" })
       }).catch(function(e){
         console.log("通知の送信に失敗しました（アプリの動作には影響しません）:", e);
       });
@@ -777,43 +1069,45 @@
     }
   }
 
+  // ---------- 保存（1件ずつ） ----------
+  // realtimeモード：Firebaseの該当パスだけを書き換える。サーバーに拒否された場合
+  // （権限がない・データの形が正しくない等）は、その旨を画面にはっきり表示する。
+  // 以前は失敗すると黙って「この端末内保存」に切り替わり、以降の記録が相手に
+  // 共有されないまま気づきにくかったため、切り替えないようにした。
+  function realtimeWriteFailed(e){
+    console.error("共有データへの保存に失敗しました:", e);
+    showError(isPermissionError(e)
+      ? "保存できませんでした（権限がないか、入力内容の形式が正しくありません）。再読み込みしてからもう一度お試しください。"
+      : "保存できませんでした。通信環境を確認して、もう一度お試しください。");
+  }
+
+  function recordWithoutId(record){
+    const clone = Object.assign({}, record);
+    delete clone.id;
+    return clone;
+  }
+
   function persistAdd(kind, record){
     if(storageMode === "realtime"){
-      const clone = Object.assign({}, record);
-      delete clone.id;
-      return window.firebaseSync.writeRecord(HOUSEHOLD_ID, kind, record.id, clone).then(function(){
+      return window.firebaseSync.writeHouseholdPath(HOUSEHOLD_ID, kind + "/" + record.id, recordWithoutId(record)).then(function(){
         flashSaved();
-        sendNtfyNotification(
-          "ふたり家計簿：" + kindLabel(kind) + "が追加されました",
-          record.date + "　" + yen(record.amount) + (record.memo ? "　" + record.memo : "")
-        );
-      }).catch(function(e){
-        console.error("リアルタイム保存に失敗したため、この端末内保存に切り替えます:", e);
-        storageMode = "local";
-        data[kind].push(record);
-        return saveData();
-      });
+        sendNtfyNotification(kind, "追加");
+      }).catch(realtimeWriteFailed);
     }
     data[kind].push(record);
+    queuePending(kind + "/" + record.id, recordWithoutId(record));
     return saveData();
   }
 
   function persistDelete(kind, id){
     if(storageMode === "realtime"){
-      return window.firebaseSync.deleteRecord(HOUSEHOLD_ID, kind, id).then(function(){
+      return window.firebaseSync.writeHouseholdPath(HOUSEHOLD_ID, kind + "/" + id, null).then(function(){
         flashSaved();
-        sendNtfyNotification(
-          "ふたり家計簿：" + kindLabel(kind) + "が削除されました",
-          "記録が1件削除されました"
-        );
-      }).catch(function(e){
-        console.error("リアルタイム削除に失敗したため、この端末内保存に切り替えます:", e);
-        storageMode = "local";
-        data[kind] = data[kind].filter(function(x){ return x.id !== id; });
-        return saveData();
-      });
+        sendNtfyNotification(kind, "削除");
+      }).catch(realtimeWriteFailed);
     }
     data[kind] = data[kind].filter(function(x){ return x.id !== id; });
+    queuePending(kind + "/" + id, null);
     return saveData();
   }
 
@@ -827,34 +1121,34 @@
     }
     if(idx < 0) return Promise.resolve();
     const updated = Object.assign({}, data[kind][idx], changes);
-    function applyLocal(){
-      data[kind][idx] = updated;
-      return saveData();
-    }
     if(storageMode === "realtime"){
-      const clone = Object.assign({}, updated);
-      delete clone.id;
-      return window.firebaseSync.writeRecord(HOUSEHOLD_ID, kind, id, clone).then(function(){
+      return window.firebaseSync.writeHouseholdPath(HOUSEHOLD_ID, kind + "/" + id, recordWithoutId(updated)).then(function(){
         flashSaved();
-        sendNtfyNotification(
-          "ふたり家計簿：" + kindLabel(kind) + "が修正されました",
-          updated.date + "　" + yen(updated.amount) + (updated.memo ? "　" + updated.memo : "")
-        );
-      }).catch(function(e){
-        console.error("リアルタイム保存に失敗したため、この端末内保存に切り替えます:", e);
-        storageMode = "local";
-        return applyLocal();
-      });
+        sendNtfyNotification(kind, "修正");
+      }).catch(realtimeWriteFailed);
     }
-    return applyLocal();
+    data[kind][idx] = updated;
+    queuePending(kind + "/" + id, recordWithoutId(updated));
+    return saveData();
+  }
+
+  // 予算・カテゴリー設定など、記録以外のデータを保存する共通処理。
+  function persistPath(path, value){
+    if(storageMode === "realtime"){
+      return window.firebaseSync.writeHouseholdPath(HOUSEHOLD_ID, path, value).then(function(){
+        flashSaved();
+      }).catch(realtimeWriteFailed);
+    }
+    queuePending(path, value);
+    return saveData();
   }
 
   // レコード（収入・支出・貯金）に共通の項目を組み立てる。
-  // ログイン中（リアルタイム共有モード）であれば、「誰が記録したか」を
-  // 一緒に保存しておく（addedBy）。ログインしていない場合は付与しない。
+  // ログイン中であれば、「誰が記録したか」を一緒に保存しておく（addedBy）。
+  // ログインしていない場合は付与しない。
   function buildRecordBase(fields){
     const record = Object.assign({ id: uid() }, fields);
-    if(storageMode === "realtime" && currentUser && currentUser.email){
+    if((storageMode === "realtime" || realtimeFallback) && currentUser && currentUser.email){
       record.addedBy = currentUser.email;
     }
     return record;
@@ -864,40 +1158,184 @@
   // @より前の部分だけを表示し、addedByが無い場合は何も表示しない。
   function addedByTag(record){
     if(!record || !record.addedBy) return "";
-    return `<br><span class="added-by-tag">${escapeHtml(record.addedBy.split("@")[0])}</span>`;
+    return `<br><span class="added-by-tag">${escapeHtml(String(record.addedBy).split("@")[0])}</span>`;
   }
 
-  // 変動費のカテゴリー別予算の保存。予算は「今月分」のような月ごとの値では
-  // なく、毎月の目安として1つだけ持たせるシンプルな仕組みにしている
-  // （多くの家庭では「食費は毎月○万円」のように、月によって変えるより
-  // 一定の目安を使い続けることが多いという想定による）。
-  function persistBudgets(budgets){
-    data.budgets = budgets;
-    if(storageMode === "realtime"){
-      return window.firebaseSync.setBudgets(HOUSEHOLD_ID, budgets).then(function(){
-        flashSaved();
-      }).catch(function(e){
-        console.error("予算の保存に失敗したため、この端末内保存に切り替えます:", e);
-        storageMode = "local";
-        return saveData();
-      });
+  // 変動費のカテゴリー別予算。基本は「毎月共通の目安」（budgets）を1つ持ち、
+  // 特定の月だけ別の予算にしたい場合は budgetsByMonth[YYYY-MM] に保存する。
+  // その月の個別予算があればそちらを優先する。
+  function effectiveBudgets(month){
+    const bm = data.budgetsByMonth && data.budgetsByMonth[month];
+    if(bm && typeof bm === "object") return bm;
+    return data.budgets || {};
+  }
+  function hasMonthBudget(month){
+    return !!(data.budgetsByMonth && data.budgetsByMonth[month] && typeof data.budgetsByMonth[month] === "object");
+  }
+  // month を渡すとその月だけの予算、渡さなければ毎月共通の予算として保存する。
+  // budgets に null を渡すと、その月の個別予算を削除して共通の予算に戻す。
+  function persistBudgets(budgets, month){
+    if(month){
+      if(!data.budgetsByMonth) data.budgetsByMonth = {};
+      if(budgets && Object.keys(budgets).length){
+        data.budgetsByMonth[month] = budgets;
+      }else{
+        delete data.budgetsByMonth[month];
+        budgets = null;
+      }
+      return persistPath("budgetsByMonth/" + month, budgets);
     }
-    return saveData();
+    data.budgets = budgets || {};
+    return persistPath("budgets", Object.keys(data.budgets).length ? data.budgets : null);
+  }
+
+  // カテゴリーの追加など、世帯ごとの設定
+  function persistSettings(settings){
+    data.settings = settings;
+    return persistPath("settings", settings);
   }
 
 
   // ---------- Export / Import (端末間でデータをまとめる) ----------
-  function exportData(){
-    const blob = new Blob([JSON.stringify(data, null, 2)], {type:"application/json"});
+  function downloadBlob(blob, filename){
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    const stamp = todayStr().replace(/-/g,"");
     a.href = url;
-    a.download = `household-budget-${stamp}.json`;
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     a.remove();
-    URL.revokeObjectURL(url);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+  }
+
+  function exportData(){
+    const stamp = todayStr().replace(/-/g,"");
+    downloadBlob(new Blob([JSON.stringify(data, null, 2)], {type:"application/json"}), `household-budget-${stamp}.json`);
+  }
+
+  // ---------- 区分・カテゴリーの共通処理 ----------
+  // 支出カテゴリーは、あらかじめ用意したもの（FIXED_CATS・VARIABLE_CATS）に、
+  // マイページから追加したもの（data.settings.extraCats）を足して使う。
+  const EXTRA_CAT_COLORS = ["#6B7F99","#7C6A92","#5E8C88","#93785A","#8A6F7D","#6E8B5B","#A0715E","#5B7290"];
+  function extraCatNames(type){
+    const ec = data.settings && data.settings.extraCats;
+    let list = ec && ec[type];
+    if(list && !Array.isArray(list) && typeof list === "object"){
+      list = Object.keys(list).map(function(k){ return list[k]; });
+    }
+    if(!Array.isArray(list)) return [];
+    return list.filter(function(n){ return typeof n === "string" && n.trim(); });
+  }
+  function withExtraCats(base, type){
+    const extras = extraCatNames(type).filter(function(n){
+      return !base.some(function(c){ return c.key === n; });
+    }).map(function(n, i){
+      return { key: n, color: EXTRA_CAT_COLORS[i % EXTRA_CAT_COLORS.length], custom: true };
+    });
+    return base.concat(extras);
+  }
+  function fixedCats(){ return withExtraCats(FIXED_CATS, "fixed"); }
+  function variableCats(){ return withExtraCats(VARIABLE_CATS, "variable"); }
+  function expenseCats(type){ return type === "fixed" ? fixedCats() : variableCats(); }
+
+  // 区分の表示名と色。一覧にない区分（読み込んだデータや、削除したカテゴリー）でも
+  // 画面が止まらないよう、そのままの名前と灰色で表示する。
+  function catInfo(kind, rec){
+    let list;
+    if(kind === "incomes") list = INCOME_CATS;
+    else if(kind === "savings") list = SAVING_CATS;
+    else list = expenseCats(rec.type);
+    for(let i=0; i<list.length; i++){
+      if(list[i].key === rec.category) return { key: list[i].key, label: list[i].label || list[i].key, color: list[i].color };
+    }
+    return { key: rec.category, label: rec.category || "（区分なし）", color: "#9AA1A8" };
+  }
+  function kindTypeLabel(kind, rec){
+    if(kind === "incomes") return "収入";
+    if(kind === "savings") return "貯金・資産形成";
+    return rec.type === "fixed" ? "固定費" : "変動費";
+  }
+  // 収入・支出・貯金をまとめた一覧（検索・CSV出力で使う）
+  function allRecordsForList(){
+    const out = [];
+    ["incomes","expenses","savings"].forEach(function(kind){
+      data[kind].forEach(function(rec){
+        const ci = catInfo(kind, rec);
+        out.push({ kind: kind, rec: rec, typeLabel: kindTypeLabel(kind, rec), catLabel: ci.label, color: ci.color });
+      });
+    });
+    out.sort(function(a, b){ return b.rec.date.localeCompare(a.rec.date); });
+    return out;
+  }
+
+  // ---------- 金額の入力（足し算に対応） ----------
+  // 「1200+850」のような入力を合計して返す。全角数字・カンマ・「¥」「円」も受け付ける。
+  // 正しく読めない場合や0以下の場合は NaN を返す。
+  function toHalfWidth(str){
+    return String(str).replace(/[！-～]/g, function(ch){
+      return String.fromCharCode(ch.charCodeAt(0) - 0xFEE0);
+    }).replace(/　/g, " ");
+  }
+  function parseAmount(str){
+    if(str == null) return NaN;
+    let t = toHalfWidth(str).replace(/[\s,¥￥円]/g, "").replace(/[ー−–]/g, "-");
+    if(!t) return NaN;
+    if(!/^[0-9.+\-]+$/.test(t)) return NaN;
+    if(/^[+\-]/.test(t) === false) t = "+" + t;
+    const terms = t.match(/[+\-][0-9.]+/g);
+    if(!terms || terms.join("") !== t) return NaN;
+    let total = 0;
+    for(let i=0; i<terms.length; i++){
+      const v = parseFloat(terms[i]);
+      if(!isFinite(v)) return NaN;
+      total += v;
+    }
+    total = Math.round(total * 100) / 100;
+    return total > 0 ? total : NaN;
+  }
+
+  // 同じ日・同じお店（メモ）・同じカテゴリーの支出がすでにあれば、
+  // 1件にまとめる（金額を足す）か、別の記録として追加するかを選べるようにする。
+  function findSameExpense(record){
+    if(!record.memo) return null;
+    for(let i=0; i<data.expenses.length; i++){
+      const x = data.expenses[i];
+      if(x.date === record.date && x.type === record.type && x.category === record.category && (x.memo || "") === record.memo){
+        return x;
+      }
+    }
+    return null;
+  }
+  function addExpenseOrMerge(record){
+    const same = findSameExpense(record);
+    if(same && confirm(
+      record.date + " の「" + record.memo + "」（" + record.category + "）は、すでに " + yen(same.amount) + " で記録されています。\n\n" +
+      "OK：金額を足して1件にまとめる（合計 " + yen(same.amount + record.amount) + "）\n" +
+      "キャンセル：別の記録として追加する"
+    )){
+      return persistUpdate("expenses", same.id, { amount: Math.round((same.amount + record.amount) * 100) / 100 });
+    }
+    return persistAdd("expenses", record);
+  }
+
+  // ---------- CSV出力（Excel等で開く用） ----------
+  function csvCell(v, isText){
+    let s = String(v == null ? "" : v);
+    // 「=」などで始まる文字列は、Excelで数式として実行されないよう先頭に ' を付ける
+    if(isText && /^[=+\-@\t\r]/.test(s)) s = "'" + s;
+    return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+  function exportCsv(){
+    const lines = [["日付","種類","区分・カテゴリー","メモ","金額","記録者"].join(",")];
+    allRecordsForList().slice().reverse().forEach(function(r){
+      lines.push([
+        csvCell(r.rec.date), csvCell(r.typeLabel), csvCell(r.catLabel, true),
+        csvCell(r.rec.memo || "", true), csvCell(r.rec.amount), csvCell(r.rec.addedBy ? String(r.rec.addedBy).split("@")[0] : "", true)
+      ].join(","));
+    });
+    const stamp = todayStr().replace(/-/g,"");
+    // 先頭のBOM（\uFEFF）は、ExcelでUTF-8の日本語を文字化けさせずに開くため
+    downloadBlob(new Blob(["\uFEFF" + lines.join("\r\n")], {type:"text/csv"}), `household-budget-${stamp}.csv`);
   }
 
   // ---------- 月次レポートのPDF出力 ----------
@@ -905,7 +1343,7 @@
     if(!list.length) return `<tr><td colspan="4" class="print-empty">記録がありません</td></tr>`;
     return list.slice().sort(function(a,b){ return a.date.localeCompare(b.date); }).map(function(x){
       return `<tr>
-        <td>${x.date}</td>
+        <td>${escapeHtml(x.date)}</td>
         <td>${escapeHtml(categoryLabelFn(x))}</td>
         <td>${escapeHtml(x.memo || "")}</td>
         <td class="amt">${yen(x.amount)}</td>
@@ -927,8 +1365,8 @@
     const balance = totalIncome - totalExpense - totalSaving;
     const savingRate = totalIncome > 0 ? Math.round((totalSaving/totalIncome)*100) : 0;
 
-    const incomeLabel = function(x){ const c = INCOME_CATS.find(function(c){ return c.key===x.category; }); return c ? c.label : x.category; };
-    const savingLabel = function(x){ const c = SAVING_CATS.find(function(c){ return c.key===x.category; }); return c ? c.label : x.category; };
+    const incomeLabel = function(x){ return catInfo("incomes", x).label; };
+    const savingLabel = function(x){ return catInfo("savings", x).label; };
     const plainLabel = function(x){ return x.category; };
 
     const printedAt = new Date();
@@ -1178,7 +1616,7 @@
     {type:"variable", category:"娯楽費", words:["シネマ","映画","遊園地","ゲームセンター"]},
     {type:"variable", category:"教育費", words:["書店","本屋","塾","教材","文房具"]},
     {type:"fixed", category:"光熱費", words:["電力","電気料金","ガス料金","水道局","水道料金"]},
-    {type:"fixed", category:"通信費", words:["携帯","モバイル","ドコモ","ａｕ","ソフトバンク","楽天モバイル"]}
+    {type:"fixed", category:"通信費", words:["携帯","モバイル","ドコモ","ａｕ","au ","ソフトバンク","楽天モバイル"]}
   ];
 
   function guessExpenseCategory(text){
@@ -1195,15 +1633,28 @@
     return {type: "variable", category: "その他変動費"};
   }
 
-  function guessExpenseAmount(text){
-    const totalMatch = text.match(/(?:合計|お会計|御会計|総額|計)[^0-9]{0,10}([0-9][0-9,]{1,9})/);
-    if(totalMatch){
-      const n = parseInt(totalMatch[1].replace(/,/g, ""), 10);
-      if(n > 0) return n;
+  function guessExpenseAmount(rawText){
+    // iPhoneのテキスト認識などでは全角数字・全角記号のこともあるため、半角にそろえる
+    const text = toHalfWidth(rawText);
+    // 「合計」「お会計」などを優先し、無ければ「計」で探す（「小計」は税抜のことが多いため後回し）
+    const totalPatterns = [
+      /(?:お?支払(?:い)?(?:金額|額)?|ご請求額|お会計|御会計|総合計|合計|総額)[^0-9\n]{0,12}([0-9][0-9,]{0,9})/,
+      /(?:^|[^小])計[^0-9\n]{0,12}([0-9][0-9,]{0,9})/
+    ];
+    for(let i=0; i<totalPatterns.length; i++){
+      const m = text.match(totalPatterns[i]);
+      if(m){
+        const n = parseInt(m[1].replace(/,/g, ""), 10);
+        if(n > 0) return n;
+      }
     }
     // 「合計」等の文字が見つからない場合は、文中の金額らしき数値のうち
     // 最も大きいものを採用する（レシートの合計額は多くの場合、最大の数値になるため）。
-    const matches = text.match(/[0-9]{1,3}(?:,[0-9]{3})+|[0-9]{3,7}/g) || [];
+    // ただし「お預り」「お釣り」や電話番号・登録番号の行は除く。
+    const usable = text.split("\n").filter(function(line){
+      return !/(預|釣|つり|TEL|Tel|電話|登録番号|No\.|ポイント|残高)/.test(line);
+    }).join("\n");
+    const matches = usable.match(/[0-9]{1,3}(?:,[0-9]{3})+|[0-9]{3,7}/g) || [];
     const nums = matches
       .map(function(s){ return parseInt(s.replace(/,/g, ""), 10); })
       .filter(function(n){ return n > 0 && n < 1000000; });
@@ -1211,13 +1662,21 @@
     return null;
   }
 
-  function guessExpenseDate(text){
-    const m = text.match(/(20[0-9]{2})[\/\.年]\s*([0-1]?[0-9])[\/\.月]\s*([0-3]?[0-9])/);
-    if(m){
-      const mo = String(parseInt(m[2], 10)).padStart(2, "0");
-      const d = String(parseInt(m[3], 10)).padStart(2, "0");
-      return m[1] + "-" + mo + "-" + d;
+  function guessExpenseDate(rawText){
+    const text = toHalfWidth(rawText);
+    function fmt(y, mo, d){
+      const moN = parseInt(mo, 10), dN = parseInt(d, 10);
+      if(!(moN >= 1 && moN <= 12 && dN >= 1 && dN <= 31)) return null;
+      return y + "-" + String(moN).padStart(2, "0") + "-" + String(dN).padStart(2, "0");
     }
+    let m = text.match(/(20[0-9]{2})\s*[\/\.\-年]\s*([0-1]?[0-9])\s*[\/\.\-月]\s*([0-3]?[0-9])/);
+    if(m){ const r = fmt(m[1], m[2], m[3]); if(r) return r; }
+    // 令和の表記（令和8年10月12日 → 2026-10-12）
+    m = text.match(/(?:令和|R)\s*([0-9]{1,2})\s*[年\.\/]\s*([0-1]?[0-9])\s*[月\.\/]\s*([0-3]?[0-9])/);
+    if(m){ const r = fmt(String(2018 + parseInt(m[1], 10)), m[2], m[3]); if(r) return r; }
+    // 2桁の西暦（26/10/12）
+    m = text.match(/(?:^|[^0-9])([2-9][0-9])\/([0-1]?[0-9])\/([0-3]?[0-9])(?:[^0-9]|$)/);
+    if(m){ const r = fmt("20" + m[1], m[2], m[3]); if(r) return r; }
     return todayStr();
   }
 
@@ -1227,9 +1686,8 @@
   }
 
   function categoryOptionsHtml(type, selected){
-    const cats = type === "fixed" ? FIXED_CATS : VARIABLE_CATS;
-    return cats.map(function(c){
-      return `<option value="${c.key}" ${c.key === selected ? "selected" : ""}>${c.key}</option>`;
+    return expenseCats(type).map(function(c){
+      return `<option value="${escapeHtml(c.key)}" ${c.key === selected ? "selected" : ""}>${escapeHtml(c.key)}</option>`;
     }).join("");
   }
 
@@ -1254,9 +1712,9 @@
         <div class="field"><label>カテゴリー</label>
           <select id="receipt-cat">${categoryOptionsHtml(guess.type, guess.category)}</select>
         </div>
-        <div class="field"><label>日付</label><input type="date" id="receipt-date" value="${guess.date}"></div>
-        <div class="field"><label>メモ（お店の名前など）</label><input type="text" id="receipt-memo" value="${escapeHtml(guess.memo || "")}"></div>
-        <div class="field"><label>金額</label><input type="number" id="receipt-amount" min="0" value="${guess.amount || ""}" placeholder="金額を入力"></div>
+        <div class="field"><label>日付</label><input type="date" id="receipt-date" value="${escapeHtml(guess.date)}"></div>
+        <div class="field"><label>メモ（お店の名前など）</label><input type="text" id="receipt-memo" maxlength="100" value="${escapeHtml(guess.memo || "")}"></div>
+        <div class="field"><label>金額</label><input type="text" inputmode="decimal" id="receipt-amount" value="${guess.amount || ""}" placeholder="金額を入力"></div>
         <div class="receipt-review-actions">
           <button class="add-btn" id="receipt-confirm-btn">この内容で追加する</button>
           <button class="ghost-btn" id="receipt-cancel-btn">キャンセル</button>
@@ -1270,15 +1728,15 @@
 
     el("receipt-type").onchange = function(){
       const newType = el("receipt-type").value;
-      const defaultCat = newType === "fixed" ? FIXED_CATS[0].key : VARIABLE_CATS[0].key;
+      const defaultCat = expenseCats(newType)[0].key;
       el("receipt-cat").innerHTML = categoryOptionsHtml(newType, defaultCat);
     };
     el("receipt-cancel-btn").onclick = function(){
       showReceiptStatus("");
     };
     el("receipt-confirm-btn").onclick = function(){
-      const amount = parseFloat(el("receipt-amount").value);
-      if(!amount || amount <= 0){ el("receipt-amount").focus(); return; }
+      const amount = parseAmount(el("receipt-amount").value);
+      if(!(amount > 0)){ el("receipt-amount").focus(); return; }
       const record = buildRecordBase({
         type: el("receipt-type").value,
         date: el("receipt-date").value || todayStr(),
@@ -1286,15 +1744,44 @@
         memo: el("receipt-memo").value.trim(),
         amount: amount
       });
-      persistAdd("expenses", record).then(function(){
-        showReceiptStatus(`<p class="hint">✅ 支出に追加しました。</p>`);
+      addExpenseOrMerge(record).then(function(){
+        showReceiptStatus(`<p class="hint">✅ 支出に記録しました。</p>`);
         renderExpensePanel();
         renderDashboardPanel();
       });
     };
   }
 
+  // レシートの文字（読み取り済みのテキスト）から、確認・修正フォームを作る
+  function reviewReceiptText(text, previewUrl){
+    const catGuess = guessExpenseCategory(text);
+    renderReceiptReview({
+      type: catGuess.type,
+      category: catGuess.category,
+      date: guessExpenseDate(text),
+      memo: guessExpenseMemo(text),
+      amount: guessExpenseAmount(text) || 0
+    }, text, previewUrl);
+  }
+
   function initReceiptScan(){
+    // iPhoneの「テキスト認識表示」などでコピーしたレシートの文字を貼り付けて読み取る。
+    // 端末側の文字認識は日本語のレシートでも精度が高く、通信・サーバーも不要。
+    const pasteBtn = el("receiptPasteBtn");
+    const pasteArea = el("receiptPasteArea");
+    if(pasteBtn && pasteArea){
+      pasteBtn.onclick = function(){
+        pasteArea.hidden = !pasteArea.hidden;
+        if(!pasteArea.hidden && el("receiptPasteText")) el("receiptPasteText").focus();
+      };
+      el("receiptPasteGo").onclick = function(){
+        const text = el("receiptPasteText").value;
+        if(!text.trim()){ el("receiptPasteText").focus(); return; }
+        pasteArea.hidden = true;
+        el("receiptPasteText").value = "";
+        reviewReceiptText(text, "");
+      };
+    }
     const btn = el("receiptScanBtn");
     const fileInput = el("receiptFileInput");
     if(!btn || !fileInput) return;
@@ -1313,17 +1800,7 @@
       `);
 
       runOcr(file).then(function(text){
-        const amount = guessExpenseAmount(text);
-        const date = guessExpenseDate(text);
-        const catGuess = guessExpenseCategory(text);
-        const memo = guessExpenseMemo(text);
-        renderReceiptReview({
-          type: catGuess.type,
-          category: catGuess.category,
-          date: date,
-          memo: memo,
-          amount: amount || 0
-        }, text, previewUrl);
+        reviewReceiptText(text, previewUrl);
       }).catch(function(e){
         console.error("レシートの読み取りに失敗しました:", e);
         const isDecodeError = e && /読み込めません|対応していない/.test(e.message || "");
@@ -1480,7 +1957,7 @@
     const addedRecords = []; // [{kind, record}]
     ["incomes","expenses","savings"].forEach(function(k){
       const existingIds = new Set(data[k].map(function(x){ return x.id; }));
-      (parsed[k] || []).forEach(function(item){
+      cleanRecords(parsed[k]).forEach(function(item){
         if(item && item.id && !existingIds.has(item.id)){
           data[k].push(item);
           existingIds.add(item.id);
@@ -1520,16 +1997,15 @@
         // レコードごとにFirebaseへ書き込む（1件ずつ順番に処理する）
         savePromise = addedRecords.reduce(function(chain, item){
           return chain.then(function(){
-            const clone = Object.assign({}, item.record);
-            delete clone.id;
-            return window.firebaseSync.writeRecord(HOUSEHOLD_ID, item.kind, item.record.id, clone);
+            return window.firebaseSync.writeHouseholdPath(HOUSEHOLD_ID, item.kind + "/" + item.record.id, recordWithoutId(item.record));
           });
         }, Promise.resolve());
         if(mergeResult.budgetsChanged){
           savePromise = savePromise.then(function(){
-            return window.firebaseSync.setBudgets(HOUSEHOLD_ID, data.budgets);
+            return window.firebaseSync.writeHouseholdPath(HOUSEHOLD_ID, "budgets", data.budgets);
           });
         }
+        savePromise = savePromise.catch(realtimeWriteFailed);
       }else{
         savePromise = saveData();
       }
@@ -1542,11 +2018,23 @@
     reader.readAsText(file);
   }
 
-  function flashSaved(){
+  function flashSaved(message){
     const s = el("saveStatus");
+    s.textContent = (typeof message === "string" && message) ? message : "保存しました";
+    s.classList.remove("error");
     s.classList.add("show");
     clearTimeout(flashSaved._t);
-    flashSaved._t = setTimeout(()=> s.classList.remove("show"), 1200);
+    flashSaved._t = setTimeout(()=> s.classList.remove("show"), (typeof message === "string" && message) ? 3000 : 1200);
+  }
+  // 保存に失敗したときなど、見逃してほしくないお知らせを赤色で数秒間表示する
+  function showError(message){
+    const s = el("saveStatus");
+    if(!s) return;
+    s.textContent = message;
+    s.classList.add("error");
+    s.classList.add("show");
+    clearTimeout(flashSaved._t);
+    flashSaved._t = setTimeout(function(){ s.classList.remove("show"); s.classList.remove("error"); }, 6000);
   }
 
   function monthLabel(m){
@@ -1624,7 +2112,9 @@
             ? "共有保存中：夫婦どちらの端末からもこのデータを確認できます"
             : storageMode === "realtime"
               ? "リアルタイム共有中：入力するとすぐに夫婦の端末に反映されます"
-              : "この端末にのみ保存中：もう一方の端末と合わせるには「書き出す／読み込む」をご利用ください（マイページ）"}
+              : realtimeFallback
+                ? "一時的にこの端末に保存中（共有サーバーにつながると自動で共有します）"
+                : "この端末にのみ保存中：もう一方の端末と合わせるには「書き出す／読み込む」をご利用ください（マイページ）"}
         </div>
       </div>
       ${(storageMode === "realtime" && connectionLost) ? `
@@ -1632,16 +2122,23 @@
         <span>🔌 接続が切れたようです。相手の更新がまだ反映されていない可能性があります。</span>
         <button class="ghost-btn" id="reconnectBtn">再読み込みする</button>
       </div>` : ""}
+      ${realtimeFallback ? `
+      <div class="disconnect-banner">
+        <span>⚠️ 共有サーバーにつながっていません。入力した内容はこの端末に一時保存し、つながった時点で自動的に共有します${readPending().length ? `（未送信 ${readPending().length}件）` : ""}。</span>
+        <button class="ghost-btn" id="reconnectBtn">再読み込みする</button>
+      </div>` : ""}
       <div class="tabs">
         <button class="tab-btn" data-tab="income">収入</button>
         <button class="tab-btn" data-tab="expense">支出</button>
         <button class="tab-btn" data-tab="saving">貯金・資産形成</button>
         <button class="tab-btn" data-tab="dashboard">ダッシュボード</button>
+        <button class="tab-btn" data-tab="search">検索</button>
       </div>
       <div class="panel" id="panel-income"></div>
       <div class="panel" id="panel-expense"></div>
       <div class="panel" id="panel-saving"></div>
       <div class="panel" id="panel-dashboard"></div>
+      <div class="panel" id="panel-search"></div>
     `;
     if(el("reconnectBtn")){
       el("reconnectBtn").onclick = function(){ location.reload(); };
@@ -1653,32 +2150,82 @@
     renderExpensePanel();
     renderSavingPanel();
     renderDashboardPanel();
+    renderSearchPanel();
     renderTabs();
   }
 
   // ---------- マイページ（設定） ----------
+  function formatInviteCode(code){
+    return String(code || "").replace(/(.{4})(?=.)/g, "$1-");
+  }
+  function copyText(text, doneMessage){
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(function(){
+        alert(doneMessage);
+      }).catch(function(){
+        alert("コピーできませんでした。表示されている文字を手動で選択してコピーしてください。");
+      });
+    }else{
+      alert("お使いのブラウザは自動コピーに対応していません。表示されている文字を手動で選択してコピーしてください。");
+    }
+  }
+  function memberDisplayName(memberUid){
+    const info = householdMeta.memberInfo && householdMeta.memberInfo[memberUid];
+    if(info && info.email) return String(info.email);
+    return "メールアドレス未登録のメンバー（ID末尾 " + String(memberUid).slice(-4) + "）";
+  }
+
   function renderMyPage(){
     const content = el("pageContent");
     if(!content) return;
     const loggedIn = storageMode === "realtime" && !!currentUser;
+    const memberIds = Object.keys(householdMeta.members || {});
+    const metaMissingMsg = `<p class="hint warn-text">準備中です。しばらく表示が変わらない場合は、Firebaseのデータベースのルールが新しい内容（firebase_rules_v2.json）に更新されているか確認してください。</p>`;
+    const extraFixed = extraCatNames("fixed");
+    const extraVariable = extraCatNames("variable");
     content.innerHTML = `
       <div class="card">
         <h2>マイページ</h2>
         ${loggedIn
           ? `<p class="hint">ログイン中のアカウント：${escapeHtml(currentUser.email || "")}</p>`
-          : `<p class="hint">ログインしていません。この端末だけにデータを保存しています。</p>`}
+          : (realtimeFallback
+            ? `<p class="hint warn-text">共有サーバーにつながっていないため、招待コードやメンバーの設定は表示できません。通信環境の良い場所で再読み込みしてください。</p>`
+            : `<p class="hint">ログインしていません。この端末だけにデータを保存しています。</p>`)}
       </div>
       ${loggedIn ? `
       <div class="card">
         <h2>招待コード</h2>
-        <p class="hint">パートナーや友人にこのコードを共有すると、同じ家計データを一緒に使えます。</p>
-        <div class="field"><label>招待コード</label><input type="text" id="mypage-invite-code" readonly value="${HOUSEHOLD_ID}"></div>
-        <button class="ghost-btn" id="mypage-copy-invite" style="width:100%;">コピーする</button>
+        <p class="hint">パートナーにこのコードを伝えると、同じ家計に参加できます。コードが他の人に知られてしまった場合は「作り直す」を押してください（古いコードは使えなくなります）。</p>
+        ${householdMeta.inviteCode ? `
+          <div class="field"><label>招待コード</label><input type="text" id="mypage-invite-code" readonly value="${escapeHtml(formatInviteCode(householdMeta.inviteCode))}"></div>
+          <div class="btn-row">
+            <button class="ghost-btn" id="mypage-copy-invite">コピーする</button>
+            <button class="ghost-btn" id="mypage-regen-invite">作り直す</button>
+          </div>` : metaMissingMsg}
+      </div>
+      <div class="card">
+        <h2>この家計のメンバー</h2>
+        <p class="hint">知らないメンバーがいる場合は「外す」を押してください。外したあとは、招待コードも自動で作り直します。</p>
+        <ul class="member-list">
+          ${memberIds.map(function(mid){
+            const me = mid === currentUser.uid;
+            return `<li>
+              <span class="member-name">${escapeHtml(memberDisplayName(mid))}${me ? `<span class="me-tag">あなた</span>` : ""}</span>
+              ${me ? "" : `<button class="ghost-btn danger-btn member-remove" data-uid="${escapeHtml(mid)}">外す</button>`}
+            </li>`;
+          }).join("") || `<li class="empty-row">メンバー情報を読み込めませんでした</li>`}
+        </ul>
+        <button class="ghost-btn" id="mypage-leave" style="width:100%;margin-top:12px;">この家計から抜ける</button>
       </div>
       <div class="card">
         <h2>スマートフォン通知</h2>
-        <p class="hint">ntfyアプリ（無料）でこのトピック名を購読すると、記録の追加・削除のたびにスマートフォンへ通知が届きます。</p>
-        <div class="field"><label>通知トピック名</label><input type="text" id="mypage-notify-topic" readonly value="kakeibo-${HOUSEHOLD_ID}"></div>
+        <p class="hint">ntfyアプリ（無料）でこのトピック名を購読すると、記録の追加・修正・削除のたびにスマートフォンへ通知が届きます。トピック名を知っている人は誰でも通知を受け取れるため、通知には金額やメモは載せていません。トピック名が他の人に知られた場合は「作り直す」を押し、新しいトピック名を購読し直してください。</p>
+        ${householdMeta.notifyTopic ? `
+          <div class="field"><label>通知トピック名</label><input type="text" id="mypage-notify-topic" readonly value="${escapeHtml(householdMeta.notifyTopic)}"></div>
+          <div class="btn-row">
+            <button class="ghost-btn" id="mypage-copy-topic">コピーする</button>
+            <button class="ghost-btn" id="mypage-regen-topic">作り直す</button>
+          </div>` : metaMissingMsg}
       </div>
       <div class="card">
         <h2>メールアドレスの変更</h2>
@@ -1692,9 +2239,26 @@
       </div>
       ` : ""}
       <div class="card">
+        <h2>支出カテゴリーの追加</h2>
+        <p class="hint">固定費・変動費のカテゴリーを追加できます（例：保育料、おむつ・ミルク）。追加したカテゴリーは、家計のメンバー全員の画面に表示されます。削除しても、そのカテゴリーで記録済みの支出は消えません。</p>
+        <div class="cat-add-form">
+          <div class="field"><label>種類</label>
+            <select id="cat-add-type"><option value="variable">変動費</option><option value="fixed">固定費</option></select>
+          </div>
+          <div class="field"><label>カテゴリー名（20文字まで）</label><input type="text" id="cat-add-name" maxlength="20" placeholder="例：保育料"></div>
+          <button class="add-btn" id="cat-add-btn">追加する</button>
+        </div>
+        ${(extraFixed.length || extraVariable.length) ? `
+        <ul class="member-list">
+          ${extraFixed.map(function(n){ return `<li><span class="member-name">固定費：${escapeHtml(n)}</span><button class="ghost-btn cat-remove" data-type="fixed" data-name="${escapeHtml(n)}">削除</button></li>`; }).join("")}
+          ${extraVariable.map(function(n){ return `<li><span class="member-name">変動費：${escapeHtml(n)}</span><button class="ghost-btn cat-remove" data-type="variable" data-name="${escapeHtml(n)}">削除</button></li>`; }).join("")}
+        </ul>` : `<p class="hint" style="margin:10px 0 0;">追加したカテゴリーはまだありません。</p>`}
+      </div>
+      <div class="card">
         <h2>データの書き出し・読み込み</h2>
-        <p class="hint">${storageMode === "realtime" ? "リアルタイム共有中は基本的に不要ですが、バックアップとしてお使いいただけます。" : "この端末ともう一方の端末のデータをまとめるときに使います。"}</p>
-        <button class="ghost-btn" id="mypage-exportBtn" style="width:100%;margin-bottom:8px;">書き出す</button>
+        <p class="hint">${storageMode === "realtime" ? "リアルタイム共有中は基本的に不要ですが、バックアップとしてお使いいただけます。" : "この端末ともう一方の端末のデータをまとめるときに使います。"}CSVは、ExcelやNumbersで開いて集計するときに使えます。</p>
+        <button class="ghost-btn" id="mypage-exportBtn" style="width:100%;margin-bottom:8px;">書き出す（バックアップ用）</button>
+        <button class="ghost-btn" id="mypage-csvBtn" style="width:100%;margin-bottom:8px;">CSVで書き出す（Excel用）</button>
         <button class="ghost-btn" id="mypage-importBtn" style="width:100%;">読み込む</button>
         <input type="file" id="mypage-importFile" accept="application/json" style="display:none">
       </div>
@@ -1705,6 +2269,7 @@
     `;
 
     el("mypage-exportBtn").onclick = exportData;
+    el("mypage-csvBtn").onclick = exportCsv;
     el("mypage-importBtn").onclick = () => el("mypage-importFile").click();
     el("mypage-importFile").onchange = (e) => {
       const file = e.target.files && e.target.files[0];
@@ -1712,23 +2277,88 @@
       e.target.value = "";
     };
 
+    // カテゴリーの追加・削除
+    el("cat-add-btn").onclick = function(){
+      const type = el("cat-add-type").value;
+      const name = el("cat-add-name").value.trim().replace(/\s+/g, " ");
+      if(!name){ el("cat-add-name").focus(); return; }
+      if(name.length > 20){ alert("カテゴリー名は20文字以内で入力してください。"); return; }
+      // 予算の保存先の名前に使うため、Firebaseで使えない記号は受け付けない
+      if(/[.$#\[\]\/]/.test(name)){ alert("カテゴリー名に「. $ # [ ] /」は使えません。"); return; }
+      if(expenseCats(type).some(function(c){ return c.key === name; })){
+        alert("「" + name + "」はすでにあります。");
+        return;
+      }
+      const settings = JSON.parse(JSON.stringify(data.settings || {}));
+      if(!settings.extraCats) settings.extraCats = {};
+      settings.extraCats[type] = extraCatNames(type).concat([name]);
+      persistSettings(settings).then(function(){ renderMyPage(); });
+    };
+    each(content.querySelectorAll(".cat-remove"), function(btn){
+      btn.onclick = function(){
+        const type = btn.dataset.type, name = btn.dataset.name;
+        if(!confirm("カテゴリー「" + name + "」を削除しますか？（記録済みの支出は消えません）")) return;
+        const settings = JSON.parse(JSON.stringify(data.settings || {}));
+        if(!settings.extraCats) settings.extraCats = {};
+        settings.extraCats[type] = extraCatNames(type).filter(function(n){ return n !== name; });
+        persistSettings(settings).then(function(){ renderMyPage(); });
+      };
+    });
+
     if(loggedIn){
-      el("mypage-copy-invite").onclick = function(){
-        if(navigator.clipboard && navigator.clipboard.writeText){
-          navigator.clipboard.writeText(HOUSEHOLD_ID).then(function(){
-            alert("招待コードをコピーしました。");
-          }).catch(function(){
-            alert("コピーできませんでした。表示されている招待コードを手動で選択してコピーしてください。");
-          });
-        }else{
-          alert("お使いのブラウザは自動コピーに対応していません。表示されている招待コードを手動で選択してコピーしてください。");
-        }
+      if(el("mypage-copy-invite")){
+        el("mypage-copy-invite").onclick = function(){
+          copyText(formatInviteCode(householdMeta.inviteCode), "招待コードをコピーしました。");
+        };
+        el("mypage-regen-invite").onclick = function(){
+          if(!confirm("招待コードを作り直しますか？今のコードは使えなくなります（すでに参加しているメンバーには影響しません）。")) return;
+          window.firebaseSync.regenerateInviteCode(HOUSEHOLD_ID, householdMeta.inviteCode).then(function(){
+            flashSaved("招待コードを作り直しました");
+          }).catch(realtimeWriteFailed);
+        };
+      }
+      if(el("mypage-copy-topic")){
+        el("mypage-copy-topic").onclick = function(){
+          copyText(householdMeta.notifyTopic, "通知トピック名をコピーしました。");
+        };
+        el("mypage-regen-topic").onclick = function(){
+          if(!confirm("通知トピック名を作り直しますか？通知を受け取るには、ntfyアプリで新しいトピック名を購読し直す必要があります。")) return;
+          window.firebaseSync.regenerateNotifyTopic(HOUSEHOLD_ID).then(function(){
+            flashSaved("通知トピック名を作り直しました");
+          }).catch(realtimeWriteFailed);
+        };
+      }
+      each(content.querySelectorAll(".member-remove"), function(btn){
+        btn.onclick = function(){
+          const mid = btn.dataset.uid;
+          if(!confirm(memberDisplayName(mid) + " をこの家計から外しますか？\n外したあとは、招待コードも作り直します。")) return;
+          window.firebaseSync.removeMember(HOUSEHOLD_ID, mid).then(function(){
+            return window.firebaseSync.regenerateInviteCode(HOUSEHOLD_ID, householdMeta.inviteCode);
+          }).then(function(){
+            flashSaved("メンバーを外し、招待コードを作り直しました");
+          }).catch(realtimeWriteFailed);
+        };
+      });
+      el("mypage-leave").onclick = function(){
+        const isLast = memberIds.length <= 1;
+        const msg = isLast
+          ? "あなたはこの家計の最後のメンバーです。抜けると、この家計のデータ（収入・支出・貯金・予算）はすべて削除され、元に戻せません。\n必要であれば、先に「書き出す」でバックアップを取ってください。\n\n本当に抜けますか？"
+          : "この家計から抜けますか？もう一度参加するには、ほかのメンバーから招待コードを教えてもらう必要があります。";
+        if(!confirm(msg)) return;
+        leavingHousehold = true;
+        window.firebaseSync.leaveHousehold(HOUSEHOLD_ID, currentUser.uid, isLast, householdMeta.inviteCode).then(function(){
+          location.reload();
+        }).catch(function(e){
+          leavingHousehold = false;
+          realtimeWriteFailed(e);
+        });
       };
       el("mypage-change-email").onclick = function(){
         const newEmail = el("mypage-new-email").value.trim();
         if(!newEmail){ alert("新しいメールアドレスを入力してください。"); return; }
         window.firebaseSync.auth.updateEmailAddress(newEmail).then(function(){
           currentUser.email = newEmail;
+          maybeSetupHouseholdMeta(); // メンバー一覧に表示するメールアドレスも更新する
           alert("メールアドレスを変更しました。");
           renderMyPage();
         }).catch(function(e){
@@ -1763,16 +2393,35 @@
     }
   }
 
+  const TAB_IDS = ["income","expense","saving","dashboard","search"];
   function renderTabs(){
     // マイページ表示中など、タブ・パネルがDOM上に存在しない場合は何もしない
     if(currentPage !== "main" || !el("panel-income")) return;
     each(document.querySelectorAll(".tab-btn"), function(b){
       b.classList.toggle("active", b.dataset.tab === activeTab);
     });
-    ["income","expense","saving","dashboard"].forEach(t=>{
-      el("panel-"+t).classList.toggle("active", t === activeTab);
+    TAB_IDS.forEach(function(t){
+      if(el("panel-"+t)) el("panel-"+t).classList.toggle("active", t === activeTab);
     });
     if(activeTab === "dashboard") drawCharts();
+  }
+
+  // 金額の入力欄。スマートフォンでは数字のキーボードを出しつつ、
+  // パソコン等では「1200+850」のような足し算も入力できるよう type="text" にしている。
+  function amountInputHtml(attrs, value){
+    return `<input type="text" inputmode="decimal" autocomplete="off" ${attrs} value="${value == null ? "" : escapeHtml(String(value))}" placeholder="0">`;
+  }
+  const AMOUNT_HINT = "金額の欄では「1200+850」のような足し算もできます（合計して記録します）。";
+
+  function recordRowHtml(kind, rec){
+    const ci = catInfo(kind, rec);
+    return `<tr>
+        <td>${escapeHtml(rec.date)}${addedByTag(rec)}</td>
+        <td><span class="cat-tag" style="background:${ci.color}">${escapeHtml(ci.label)}</span></td>
+        <td>${escapeHtml(rec.memo || "")}</td>
+        <td class="amt">${yen(rec.amount)}</td>
+        <td class="row-actions">${rowActionsHtml(kind, rec.id)}</td>
+      </tr>`;
   }
 
   // ---------- Income ----------
@@ -1783,28 +2432,21 @@
       if(isEditing("incomes", i.id)){
         return editRowHtml("incomes", i, INCOME_CATS.map(c=>({value:c.key, label:c.label})), "区分");
       }
-      const cat = INCOME_CATS.find(c=>c.key===i.category);
-      return `<tr>
-        <td>${i.date}${addedByTag(i)}</td>
-        <td><span class="cat-tag" style="background:${cat.color}">${cat.label}</span></td>
-        <td>${escapeHtml(i.memo||"")}</td>
-        <td class="amt">${yen(i.amount)}</td>
-        <td class="row-actions">${rowActionsHtml("incomes", i.id)}</td>
-      </tr>`;
+      return recordRowHtml("incomes", i);
     }).join("");
     const total = monthly.reduce((s,i)=>s+i.amount,0);
 
     el("panel-income").innerHTML = `
       <div class="card">
         <h2>収入を入力する</h2>
-        <p class="hint">夫・妻・臨時収入・役所からの収入（児童手当や給付金など）を分けて記録できます。</p>
+        <p class="hint">夫・妻・臨時収入・役所からの収入（児童手当や給付金など）を分けて記録できます。${AMOUNT_HINT}</p>
         <div class="entry-form with-cat" id="incomeForm">
           <div class="field field-date"><label>日付</label><input type="date" id="inc-date" value="${todayStr()}"></div>
           <div class="field"><label>区分</label>
             <select id="inc-cat">${INCOME_CATS.map(c=>`<option value="${c.key}">${c.label}</option>`).join("")}</select>
           </div>
-          <div class="field"><label>メモ（任意）</label><input type="text" id="inc-memo" placeholder="例：8月分給与"></div>
-          <div class="field"><label>金額</label><input type="number" id="inc-amount" min="0" placeholder="0"></div>
+          <div class="field"><label>メモ（任意）</label><input type="text" id="inc-memo" maxlength="100" placeholder="例：8月分給与"></div>
+          <div class="field"><label>金額</label>${amountInputHtml('id="inc-amount"')}</div>
           <button class="add-btn" id="inc-add">追加する</button>
         </div>
         <div class="table-scroll"><table>
@@ -1817,34 +2459,28 @@
       </div>
     `;
     el("inc-add").onclick = function(){
-      const amount = parseFloat(el("inc-amount").value);
-      if(!amount || amount <= 0){ el("inc-amount").focus(); return; }
+      const amount = parseAmount(el("inc-amount").value);
+      if(!(amount > 0)){ el("inc-amount").focus(); return; }
       const record = buildRecordBase({
         date: el("inc-date").value || todayStr(),
         category: el("inc-cat").value, memo: el("inc-memo").value.trim(), amount: amount
       });
       persistAdd("incomes", record).then(function(){
-        renderIncomePanel(); renderDashboardPanel();
+        renderIncomePanel(); renderDashboardPanel(); renderSearchPanel();
       });
     };
     bindRowActions("panel-income");
   }
 
   // ---------- Expense ----------
-  function expenseTable(type, cats, title, shortLabel, hint){
+  function expenseTable(type, title, shortLabel, hint){
+    const cats = expenseCats(type);
     const monthly = data.expenses.filter(e=>inMonth(e.date) && e.type===type);
     const rows = monthly.slice().sort((a,b)=> b.date.localeCompare(a.date)).map(e=>{
       if(isEditing("expenses", e.id)){
         return editRowHtml("expenses", e, cats.map(c=>({value:c.key, label:c.key})), "カテゴリー");
       }
-      const cat = cats.find(c=>c.key===e.category) || {color:"#999"};
-      return `<tr>
-        <td>${e.date}${addedByTag(e)}</td>
-        <td><span class="cat-tag" style="background:${cat.color}">${e.category}</span></td>
-        <td>${escapeHtml(e.memo||"")}</td>
-        <td class="amt">${yen(e.amount)}</td>
-        <td class="row-actions">${rowActionsHtml("expenses", e.id)}</td>
-      </tr>`;
+      return recordRowHtml("expenses", e);
     }).join("");
     const total = monthly.reduce((s,e)=>s+e.amount,0);
     return `
@@ -1854,10 +2490,10 @@
         <div class="entry-form with-cat" data-type="${type}">
           <div class="field field-date"><label>日付</label><input type="date" class="ex-date" value="${todayStr()}"></div>
           <div class="field"><label>カテゴリー</label>
-            <select class="ex-cat">${cats.map(c=>`<option value="${c.key}">${c.key}</option>`).join("")}</select>
+            <select class="ex-cat">${categoryOptionsHtml(type, cats[0].key)}</select>
           </div>
-          <div class="field"><label>メモ（任意）</label><input type="text" class="ex-memo" placeholder="例：スーパーで食材"></div>
-          <div class="field"><label>金額</label><input type="number" class="ex-amount" min="0" placeholder="0"></div>
+          <div class="field"><label>メモ（任意）</label><input type="text" class="ex-memo" maxlength="100" placeholder="例：スーパーで食材"></div>
+          <div class="field"><label>金額</label>${amountInputHtml('class="ex-amount"')}</div>
           <button class="add-btn ex-add" data-type="${type}">追加する</button>
         </div>
         <div class="table-scroll"><table>
@@ -1871,15 +2507,19 @@
     `;
   }
 
-  // ---------- 変動費の予算設定 ----------
+  // ---------- 変動費の予算設定（毎月共通／この月だけ） ----------
   function budgetEditAreaHtml(){
+    const monthOnly = hasMonthBudget(currentMonth);
+    const current = effectiveBudgets(currentMonth);
     return `
       <p class="hint">空欄のカテゴリーは「予算なし」として扱われます（内訳に達成率は表示されません）。</p>
-      ${VARIABLE_CATS.map(function(c){
-        const val = (data.budgets && data.budgets[c.key]) || "";
-        return `<div class="field"><label>${c.key}</label><input type="number" min="0" class="budget-input" data-cat="${c.key}" value="${val}" placeholder="例：60000"></div>`;
+      ${variableCats().map(function(c){
+        const val = current[c.key] || "";
+        return `<div class="field"><label>${escapeHtml(c.key)}</label><input type="number" min="0" inputmode="numeric" class="budget-input" data-cat="${escapeHtml(c.key)}" value="${val}" placeholder="例：60000"></div>`;
       }).join("")}
+      <label class="check-row"><input type="checkbox" id="budgetMonthOnly" ${monthOnly ? "checked" : ""}><span>${monthLabel(currentMonth)}だけの予算として保存する（チェックしない場合は、毎月共通の予算になります）</span></label>
       <button class="add-btn" id="budgetSaveBtn" style="width:100%;">予算を保存する</button>
+      ${monthOnly ? `<button class="ghost-btn" id="budgetMonthResetBtn" style="width:100%;margin-top:8px;">${monthLabel(currentMonth)}の個別予算を削除して、毎月共通の予算に戻す</button>` : ""}
     `;
   }
 
@@ -1887,25 +2527,36 @@
     const toggleBtn = el("budgetToggleBtn");
     const area = el("budgetEditArea");
     if(!toggleBtn || !area) return;
+    function afterSave(){
+      area.hidden = true;
+      renderExpensePanel();
+      renderDashboardPanel();
+    }
     toggleBtn.onclick = function(){
-      const willOpen = area.style.display === "none";
-      if(willOpen){
+      if(area.hidden){
         area.innerHTML = budgetEditAreaHtml();
-        area.style.display = "block";
+        area.hidden = false;
         el("budgetSaveBtn").onclick = function(){
           const newBudgets = {};
           each(document.querySelectorAll(".budget-input"), function(inp){
             const v = parseFloat(inp.value);
             if(v > 0) newBudgets[inp.dataset.cat] = v;
           });
-          persistBudgets(newBudgets).then(function(){
-            area.style.display = "none";
-            renderExpensePanel();
-            renderDashboardPanel();
-          });
+          const monthOnly = el("budgetMonthOnly").checked;
+          let chain = persistBudgets(newBudgets, monthOnly ? currentMonth : null);
+          // 「この月だけ」のチェックを外して保存した場合は、その月の個別予算を消して共通に戻す
+          if(!monthOnly && hasMonthBudget(currentMonth)){
+            chain = chain.then(function(){ return persistBudgets(null, currentMonth); });
+          }
+          chain.then(afterSave);
         };
+        if(el("budgetMonthResetBtn")){
+          el("budgetMonthResetBtn").onclick = function(){
+            persistBudgets(null, currentMonth).then(afterSave);
+          };
+        }
       }else{
-        area.style.display = "none";
+        area.hidden = true;
       }
     };
   }
@@ -1922,23 +2573,32 @@
       alert(monthLabel(prevMonth) + "の固定費の記録が見つかりませんでした。");
       return;
     }
-    const alreadyHasThisMonth = data.expenses.some(function(e){
-      return e.type === "fixed" && inMonth(e.date);
+    // 今月にすでに同じ内容（カテゴリー・メモ・金額が同じ）の固定費があるものはコピーしない。
+    // ふたりがそれぞれボタンを押した場合や、2回押した場合の二重登録を防ぐ。
+    const thisMonthFixed = data.expenses.filter(function(e){ return e.type === "fixed" && inMonth(e.date); });
+    const toCopy = prevFixed.filter(function(src){
+      return !thisMonthFixed.some(function(e){
+        return e.category === src.category && (e.memo || "") === (src.memo || "") && e.amount === src.amount;
+      });
     });
-    const confirmMsg = alreadyHasThisMonth
-      ? "今月にはすでに固定費の記録があります。" + monthLabel(prevMonth) + "の固定費（" + prevFixed.length + "件）をそれとは別に追加しますか？"
-      : monthLabel(prevMonth) + "の固定費（" + prevFixed.length + "件）を、" + monthLabel(currentMonth) + "分としてコピーします。よろしいですか？";
+    const skipped = prevFixed.length - toCopy.length;
+    if(!toCopy.length){
+      alert(monthLabel(prevMonth) + "の固定費は、すでに" + monthLabel(currentMonth) + "にすべてコピーされています。");
+      return;
+    }
+    const confirmMsg = monthLabel(prevMonth) + "の固定費（" + toCopy.length + "件）を、" + monthLabel(currentMonth) + "分としてコピーします。よろしいですか？"
+      + (skipped ? "\n（同じ内容がすでに今月にある " + skipped + "件は、二重にならないようコピーしません）" : "");
     if(!confirm(confirmMsg)) return;
 
     const targetDate = currentMonth + "-01";
     let chain = Promise.resolve();
-    prevFixed.forEach(function(src){
+    toCopy.forEach(function(src){
       chain = chain.then(function(){
         const record = buildRecordBase({
           type: "fixed",
           date: targetDate,
           category: src.category,
-          memo: src.memo,
+          memo: src.memo || "",
           amount: src.amount
         });
         return persistAdd("expenses", record);
@@ -1947,7 +2607,7 @@
     chain.then(function(){
       renderExpensePanel();
       renderDashboardPanel();
-      alert(prevFixed.length + "件の固定費をコピーしました。金額が変わっている場合は、一覧の ✎ ボタンから修正してください。");
+      alert(toCopy.length + "件の固定費をコピーしました。金額が変わっている場合は、一覧の ✎ ボタンから修正してください。");
     });
   }
 
@@ -1956,23 +2616,32 @@
     el("panel-expense").innerHTML =
       `<div class="card receipt-card">
         <h2>📷 レシートを読み取って自動入力する</h2>
-        <p class="hint">レシートを撮影・アップロードすると、金額やお店の情報を読み取り、固定費・変動費のどちらかに振り分けたうえでフォームに自動入力します。文字の読み取り精度は完璧ではないため、内容を必ず確認してから「この内容で追加する」を押してください。初回はライブラリの読み込みのため、通信環境が必要です。<br>📸 きれいに読み取るコツ：レシートを画面いっぱいに、なるべく傾けずまっすぐ撮影してください。無地の背景（机の上に紙を敷くなど）の方が読み取りやすくなります。</p>
-        <button class="add-btn" id="receiptScanBtn">📷 レシートを読み取る</button>
+        <p class="hint">読み取った金額・日付・お店の名前から、固定費・変動費のどちらかに振り分けたフォームを用意します。読み取りは完璧ではないため、内容を確認してから「この内容で追加する」を押してください。</p>
+        <div class="receipt-actions">
+          <button class="add-btn" id="receiptPasteBtn">📋 レシートの文字を貼り付けて読み取る（おすすめ）</button>
+          <button class="ghost-btn" id="receiptScanBtn">📷 写真から読み取る</button>
+        </div>
+        <div id="receiptPasteArea" class="receipt-paste" hidden>
+          <p class="hint">iPhoneの場合：写真アプリでレシートの写真を開き、文字の部分を長押し →「すべてを選択」→「コピー」してから、下の欄に貼り付けてください（iPhoneの文字認識は日本語のレシートでも高い精度で読み取れます）。</p>
+          <textarea id="receiptPasteText" rows="6" placeholder="ここにレシートの文字を貼り付け"></textarea>
+          <button class="add-btn" id="receiptPasteGo" style="width:100%;margin-top:8px;">この文字から読み取る</button>
+        </div>
+        <p class="hint" style="margin-top:10px;margin-bottom:0;">「写真から読み取る」はこのアプリの中で文字を認識します（初回はライブラリの読み込みのため通信が必要です）。レシートを画面いっぱいに、まっすぐ・無地の背景で撮ると読み取りやすくなります。</p>
         <input type="file" id="receiptFileInput" accept="image/*" capture="environment" style="display:none">
         <div id="receiptStatus"></div>
       </div>` +
-      expenseTable("fixed", FIXED_CATS, "固定費を入力する", "固定費", "毎月ほぼ一定額かかる支出です（家賃・住宅ローン、光熱費、通信費、保険料、サブスクなど）。") +
+      expenseTable("fixed", "固定費を入力する", "固定費", "毎月ほぼ一定額かかる支出です（家賃・住宅ローン、光熱費、通信費、保険料、サブスクなど）。カテゴリーはマイページから追加できます。") +
       `<div class="card" style="margin-top:-8px;">
         <button class="ghost-btn" id="copyLastMonthFixedBtn" style="width:100%;">📋 先月の固定費をコピーする</button>
-        <p class="hint" style="margin-top:8px;margin-bottom:0;">先月登録した固定費（家賃・光熱費など）を、今月分としてまとめてコピーします。金額が変わっていれば、コピー後に一覧の ✎ ボタンから修正してください。</p>
+        <p class="hint" style="margin-top:8px;margin-bottom:0;">先月登録した固定費（家賃・光熱費など）を、今月分としてまとめてコピーします。同じ内容がすでに今月にあるものはコピーしません。金額が変わっていれば、コピー後に一覧の ✎ ボタンから修正してください。</p>
       </div>` +
       `<div class="card budget-panel">
-        <h2>💰 変動費の予算</h2>
-        <p class="hint">食費や日用品など、カテゴリーごとに毎月の目安予算を設定すると、下の内訳やダッシュボードに達成率が表示されます。</p>
+        <h2>💰 変動費の予算${hasMonthBudget(currentMonth) ? `<span class="month-budget-tag">${monthLabel(currentMonth)}は個別の予算</span>` : ""}</h2>
+        <p class="hint">食費や日用品など、カテゴリーごとに毎月の目安予算を設定すると、ダッシュボードの内訳に達成率が表示されます。帰省やイベントのある月だけ、別の予算にすることもできます。</p>
         <button class="ghost-btn" id="budgetToggleBtn" style="width:100%;">予算を設定する</button>
-        <div id="budgetEditArea" style="display:none;margin-top:14px;"></div>
+        <div id="budgetEditArea" class="budget-edit-area" hidden></div>
       </div>` +
-      expenseTable("variable", VARIABLE_CATS, "変動費を入力する", "変動費", "月によって金額が変わる支出です（食費、日用品、医療費、交通費、被服費、交際費、娯楽費、教育費など）。");
+      expenseTable("variable", "変動費を入力する", "変動費", "月によって金額が変わる支出です（食費、日用品、医療費、交通費、被服費、交際費、娯楽費、教育費など）。同じ日・同じお店（メモ）・同じカテゴリーの記録がすでにある場合は、金額を足して1件にまとめることもできます。" + AMOUNT_HINT);
 
     initReceiptScan();
     initBudgetPanel();
@@ -1982,8 +2651,8 @@
       btn.onclick = function(){
         const type = btn.dataset.type;
         const form = btn.closest(".entry-form");
-        const amount = parseFloat(form.querySelector(".ex-amount").value);
-        if(!amount || amount <= 0){ form.querySelector(".ex-amount").focus(); return; }
+        const amount = parseAmount(form.querySelector(".ex-amount").value);
+        if(!(amount > 0)){ form.querySelector(".ex-amount").focus(); return; }
         const record = buildRecordBase({
           type: type,
           date: form.querySelector(".ex-date").value || todayStr(),
@@ -1991,8 +2660,8 @@
           memo: form.querySelector(".ex-memo").value.trim(),
           amount: amount
         });
-        persistAdd("expenses", record).then(function(){
-          renderExpensePanel(); renderDashboardPanel();
+        addExpenseOrMerge(record).then(function(){
+          renderExpensePanel(); renderDashboardPanel(); renderSearchPanel();
         });
       };
     });
@@ -2007,14 +2676,7 @@
       if(isEditing("savings", s.id)){
         return editRowHtml("savings", s, SAVING_CATS.map(c=>({value:c.key, label:c.label})), "区分");
       }
-      const cat = SAVING_CATS.find(c=>c.key===s.category);
-      return `<tr>
-        <td>${s.date}${addedByTag(s)}</td>
-        <td><span class="cat-tag" style="background:${cat.color}">${cat.label}</span></td>
-        <td>${escapeHtml(s.memo||"")}</td>
-        <td class="amt">${yen(s.amount)}</td>
-        <td class="row-actions">${rowActionsHtml("savings", s.id)}</td>
-      </tr>`;
+      return recordRowHtml("savings", s);
     }).join("");
     const total = monthly.reduce((s,i)=>s+i.amount,0);
 
@@ -2027,8 +2689,8 @@
           <div class="field"><label>区分</label>
             <select id="sav-cat">${SAVING_CATS.map(c=>`<option value="${c.key}">${c.label}</option>`).join("")}</select>
           </div>
-          <div class="field"><label>メモ（任意）</label><input type="text" id="sav-memo" placeholder="例：つみたて投資枠"></div>
-          <div class="field"><label>金額</label><input type="number" id="sav-amount" min="0" placeholder="0"></div>
+          <div class="field"><label>メモ（任意）</label><input type="text" id="sav-memo" maxlength="100" placeholder="例：つみたて投資枠"></div>
+          <div class="field"><label>金額</label>${amountInputHtml('id="sav-amount"')}</div>
           <button class="add-btn" id="sav-add">追加する</button>
         </div>
         <div class="table-scroll"><table>
@@ -2041,14 +2703,14 @@
       </div>
     `;
     el("sav-add").onclick = function(){
-      const amount = parseFloat(el("sav-amount").value);
-      if(!amount || amount <= 0){ el("sav-amount").focus(); return; }
+      const amount = parseAmount(el("sav-amount").value);
+      if(!(amount > 0)){ el("sav-amount").focus(); return; }
       const record = buildRecordBase({
         date: el("sav-date").value || todayStr(),
         category: el("sav-cat").value, memo: el("sav-memo").value.trim(), amount: amount
       });
       persistAdd("savings", record).then(function(){
-        renderSavingPanel(); renderDashboardPanel();
+        renderSavingPanel(); renderDashboardPanel(); renderSearchPanel();
       });
     };
     bindRowActions("panel-saving");
@@ -2060,22 +2722,29 @@
   }
 
   function rowActionsHtml(kind, id){
-    return `<button class="edit" data-kind="${kind}" data-id="${id}" title="修正する" aria-label="修正する">✎</button>` +
-      `<button class="del" data-kind="${kind}" data-id="${id}" title="削除する" aria-label="削除する">×</button>`;
+    return `<button class="edit" data-kind="${kind}" data-id="${escapeHtml(id)}" title="修正する" aria-label="修正する">✎</button>` +
+      `<button class="del" data-kind="${kind}" data-id="${escapeHtml(id)}" title="削除する" aria-label="削除する">×</button>`;
   }
 
   // 一覧の行の位置に、その記録の内容を入れた編集フォームを開く。
   // options: [{value, label}]（区分・カテゴリーの選択肢）
+  // 「足す金額」に入力すると、今の金額に足した合計で保存する（同じ日に同じお店で
+  // 2回買い物をした場合など）。
   function editRowHtml(kind, rec, options, catLabel){
+    // 一覧にない区分の記録でも、編集で勝手に別の区分に変わらないよう選択肢に加える
+    if(!options.some(function(o){ return o.value === rec.category; })){
+      options = options.concat([{ value: rec.category, label: rec.category + "（現在の区分）" }]);
+    }
     const optionHtml = options.map(function(o){
       return `<option value="${escapeHtml(o.value)}"${o.value === rec.category ? " selected" : ""}>${escapeHtml(o.label)}</option>`;
     }).join("");
     return `<tr class="edit-row"><td colspan="5">
-      <div class="entry-form with-cat edit-form" data-kind="${kind}" data-id="${rec.id}">
+      <div class="entry-form edit-form" data-kind="${kind}" data-id="${escapeHtml(rec.id)}">
         <div class="field field-date"><label>日付</label><input type="date" class="ed-date" value="${escapeHtml(rec.date || "")}"></div>
         <div class="field"><label>${catLabel}</label><select class="ed-cat">${optionHtml}</select></div>
-        <div class="field"><label>メモ（任意）</label><input type="text" class="ed-memo" value="${escapeHtml(rec.memo || "")}"></div>
-        <div class="field"><label>金額</label><input type="number" class="ed-amount" min="0" value="${rec.amount}"></div>
+        <div class="field"><label>メモ（任意）</label><input type="text" class="ed-memo" maxlength="100" value="${escapeHtml(rec.memo || "")}"></div>
+        <div class="field"><label>金額</label>${amountInputHtml('class="ed-amount"', rec.amount)}</div>
+        <div class="field"><label>＋足す金額（任意）</label>${amountInputHtml('class="ed-plus"')}</div>
         <div class="edit-actions">
           <button class="add-btn ed-save">保存する</button>
           <button class="ghost-btn ed-cancel">キャンセル</button>
@@ -2085,7 +2754,7 @@
   }
 
   function rerenderRecordPanels(){
-    renderIncomePanel(); renderExpensePanel(); renderSavingPanel(); renderDashboardPanel();
+    renderIncomePanel(); renderExpensePanel(); renderSavingPanel(); renderDashboardPanel(); renderSearchPanel();
   }
 
   function bindRowActions(panelId){
@@ -2118,15 +2787,21 @@
       };
       form.querySelector(".ed-save").onclick = function(){
         const amountInput = form.querySelector(".ed-amount");
-        const amount = parseFloat(amountInput.value);
-        if(!amount || amount <= 0){ amountInput.focus(); return; }
+        const plusInput = form.querySelector(".ed-plus");
+        const amount = parseAmount(amountInput.value);
+        if(!(amount > 0)){ amountInput.focus(); return; }
+        let plus = 0;
+        if(plusInput.value.trim()){
+          plus = parseAmount(plusInput.value);
+          if(!(plus > 0)){ plusInput.focus(); return; }
+        }
         const dateVal = form.querySelector(".ed-date").value;
         if(!dateVal){ form.querySelector(".ed-date").focus(); return; }
         const changes = {
           date: dateVal,
           category: form.querySelector(".ed-cat").value,
           memo: form.querySelector(".ed-memo").value.trim(),
-          amount: amount
+          amount: Math.round((amount + plus) * 100) / 100
         };
         editing = null;
         persistUpdate(kind, id, changes).then(rerenderRecordPanels);
@@ -2134,7 +2809,129 @@
     });
   }
 
+  // ---------- 検索 ----------
+  // メモ・お店の名前・カテゴリー・記録者で、全期間の記録から探す。
+  let searchState = { q: "", kind: "all", from: "", to: "", ran: false };
+  const SEARCH_LIMIT = 300;
+
+  function searchResults(){
+    const q = searchState.q.trim().toLowerCase();
+    return allRecordsForList().filter(function(r){
+      if(searchState.kind === "incomes" && r.kind !== "incomes") return false;
+      if(searchState.kind === "savings" && r.kind !== "savings") return false;
+      if(searchState.kind === "fixed" && !(r.kind === "expenses" && r.rec.type === "fixed")) return false;
+      if(searchState.kind === "variable" && !(r.kind === "expenses" && r.rec.type === "variable")) return false;
+      if(searchState.from && r.rec.date < searchState.from) return false;
+      if(searchState.to && r.rec.date > searchState.to) return false;
+      if(q){
+        const hay = [r.rec.memo || "", r.catLabel, r.rec.addedBy ? String(r.rec.addedBy).split("@")[0] : ""].join(" ").toLowerCase();
+        if(hay.indexOf(q) === -1) return false;
+      }
+      return true;
+    });
+  }
+
+  function renderSearchPanel(){
+    const panel = el("panel-search");
+    if(!panel) return;
+    let resultHtml = "";
+    if(searchState.ran){
+      const results = searchResults();
+      const shown = results.slice(0, SEARCH_LIMIT);
+      const total = results.reduce(function(s, r){ return s + r.rec.amount; }, 0);
+      resultHtml = `
+        <p class="search-summary">${results.length}件見つかりました／合計 <strong>${yen(total)}</strong>${results.length > SEARCH_LIMIT ? `（新しい順に${SEARCH_LIMIT}件まで表示しています）` : ""}</p>
+        ${shown.length ? `<div class="table-scroll"><table>
+          <thead><tr><th>日付</th><th>種類</th><th>区分</th><th>メモ</th><th style="text-align:right">金額</th><th></th></tr></thead>
+          <tbody>${shown.map(function(r){
+            return `<tr>
+              <td>${escapeHtml(r.rec.date)}${addedByTag(r.rec)}</td>
+              <td>${r.typeLabel}</td>
+              <td><span class="cat-tag" style="background:${r.color}">${escapeHtml(r.catLabel)}</span></td>
+              <td>${escapeHtml(r.rec.memo || "")}</td>
+              <td class="amt">${yen(r.rec.amount)}</td>
+              <td class="row-actions"><button class="ghost-btn search-open" data-month="${escapeHtml(r.rec.date.slice(0,7))}" data-kind="${r.kind}">この月を開く</button></td>
+            </tr>`;
+          }).join("")}</tbody>
+        </table></div>` : `<p class="empty-row">条件に合う記録はありませんでした。</p>`}
+      `;
+    }
+    panel.innerHTML = `
+      <div class="card">
+        <h2>🔍 記録を探す</h2>
+        <p class="hint">メモ（お店の名前など）・カテゴリー・記録した人で、すべての月の記録から探せます。空欄の項目は条件に含めません。</p>
+        <div class="search-form">
+          <div class="field search-q"><label>キーワード</label><input type="text" id="search-q" value="${escapeHtml(searchState.q)}" placeholder="例：イオン、医療費"></div>
+          <div class="field"><label>種類</label>
+            <select id="search-kind">
+              ${[["all","すべて"],["incomes","収入"],["fixed","固定費"],["variable","変動費"],["savings","貯金・資産形成"]].map(function(o){
+                return `<option value="${o[0]}" ${searchState.kind === o[0] ? "selected" : ""}>${o[1]}</option>`;
+              }).join("")}
+            </select>
+          </div>
+          <div class="field field-date"><label>いつから</label><input type="date" id="search-from" value="${escapeHtml(searchState.from)}"></div>
+          <div class="field field-date"><label>いつまで</label><input type="date" id="search-to" value="${escapeHtml(searchState.to)}"></div>
+          <button class="add-btn" id="search-go">探す</button>
+        </div>
+        ${resultHtml}
+      </div>
+    `;
+    function run(){
+      searchState = {
+        q: el("search-q").value, kind: el("search-kind").value,
+        from: el("search-from").value, to: el("search-to").value, ran: true
+      };
+      renderSearchPanel();
+    }
+    el("search-go").onclick = run;
+    el("search-q").onkeydown = function(e){ if(e.key === "Enter") run(); };
+    each(panel.querySelectorAll(".search-open"), function(btn){
+      btn.onclick = function(){
+        currentMonth = btn.dataset.month;
+        activeTab = btn.dataset.kind === "incomes" ? "income" : (btn.dataset.kind === "savings" ? "saving" : "expense");
+        editing = null;
+        render();
+        window.scrollTo(0, 0);
+      };
+    });
+  }
+
   // ---------- Dashboard ----------
+  // 区分ごとの合計。一覧にない区分の記録もまとめて表示する（合計と内訳がずれないように）。
+  function breakdownBy(kind, list, cats){
+    const out = cats.map(function(c){
+      const sum = list.filter(function(x){ return x.category === c.key; }).reduce(function(s, x){ return s + x.amount; }, 0);
+      return { key: c.key, label: c.label || c.key, color: c.color, sum: sum };
+    });
+    const known = {};
+    cats.forEach(function(c){ known[c.key] = true; });
+    const others = {};
+    list.forEach(function(x){
+      if(!known[x.category]){ others[x.category] = (others[x.category] || 0) + x.amount; }
+    });
+    Object.keys(others).forEach(function(k){
+      out.push({ key: k, label: k || "（区分なし）", color: "#9AA1A8", sum: others[k] });
+    });
+    return out.filter(function(x){ return x.sum > 0; });
+  }
+
+  // 年間の推移（表示中の月が含まれる年の1月〜12月）
+  function yearSummary(year){
+    const months = [];
+    for(let m=1; m<=12; m++){
+      const key = year + "-" + String(m).padStart(2, "0");
+      const inM = function(x){ return x.date.slice(0, 7) === key; };
+      const sum = function(list){ return list.reduce(function(s, x){ return s + x.amount; }, 0); };
+      const income = sum(data.incomes.filter(inM));
+      const expense = sum(data.expenses.filter(inM));
+      const saving = sum(data.savings.filter(inM));
+      months.push({ month: m, key: key, income: income, expense: expense, saving: saving, balance: income - expense - saving });
+    }
+    const medical = data.expenses.filter(function(x){ return x.date.slice(0, 4) === year && x.category === "医療費"; })
+      .reduce(function(s, x){ return s + x.amount; }, 0);
+    return { months: months, medical: medical };
+  }
+
   function renderDashboardPanel(){
     if(!el("panel-dashboard")) return;
     const incomes = data.incomes.filter(i=>inMonth(i.date));
@@ -2150,28 +2947,23 @@
     const balance = totalIncome - totalExpense - totalSaving;
     const savingRate = totalIncome > 0 ? Math.round((totalSaving/totalIncome)*100) : 0;
 
-    function byCategory(list, cats, keyFn, labelFn){
-      return cats.map(c=>{
-        const sum = list.filter(x=>keyFn(x)===c.key).reduce((s,x)=>s+x.amount,0);
-        return {label: labelFn ? labelFn(c) : c.key, color:c.color, sum};
-      }).filter(x=>x.sum>0);
-    }
-    const incomeBd = byCategory(incomes, INCOME_CATS, x=>x.category, c=>c.label);
-    const fixedBd = byCategory(fixed, FIXED_CATS, x=>x.category, c=>c.key);
-    const variableBd = byCategory(variable, VARIABLE_CATS, x=>x.category, c=>c.key);
-    const savingBd = byCategory(savings, SAVING_CATS, x=>x.category, c=>c.label);
+    const incomeBd = breakdownBy("incomes", incomes, INCOME_CATS);
+    const fixedBd = breakdownBy("expenses", fixed, fixedCats());
+    const variableBd = breakdownBy("expenses", variable, variableCats());
+    const savingBd = breakdownBy("savings", savings, SAVING_CATS);
+    const budgets = effectiveBudgets(currentMonth);
 
     function legend(list){
       if(!list.length) return `<li class="empty-row">データがありません</li>`;
-      return list.map(x=>`<li><span class="legend-name"><span class="cat-dot" style="background:${x.color}"></span>${x.label}</span><span class="amt">${yen(x.sum)}</span></li>`).join("");
+      return list.map(x=>`<li><span class="legend-name"><span class="cat-dot" style="background:${x.color}"></span>${escapeHtml(x.label)}</span><span class="amt">${yen(x.sum)}</span></li>`).join("");
     }
 
     // 変動費だけは、予算が設定されているカテゴリーについて達成率も表示する
     function legendWithBudget(list){
       if(!list.length) return `<li class="empty-row">データがありません</li>`;
       return list.map(function(x){
-        const budget = data.budgets && data.budgets[x.label];
-        const row1 = `<div class="legend-row"><span class="legend-name"><span class="cat-dot" style="background:${x.color}"></span>${x.label}</span><span class="amt">${yen(x.sum)}</span></div>`;
+        const budget = budgets[x.key];
+        const row1 = `<div class="legend-row"><span class="legend-name"><span class="cat-dot" style="background:${x.color}"></span>${escapeHtml(x.label)}</span><span class="amt">${yen(x.sum)}</span></div>`;
         if(!budget){ return `<li>${row1}</li>`; }
         const pct = Math.round((x.sum / budget) * 100);
         const over = x.sum > budget;
@@ -2185,6 +2977,12 @@
         return `<li>${row1}${row2}</li>`;
       }).join("");
     }
+
+    const year = currentMonth.slice(0, 4);
+    const ys = yearSummary(year);
+    const yt = ys.months.reduce(function(t, m){
+      t.income += m.income; t.expense += m.expense; t.saving += m.saving; t.balance += m.balance; return t;
+    }, { income: 0, expense: 0, saving: 0, balance: 0 });
 
     el("panel-dashboard").innerHTML = `
       <div class="stat-grid">
@@ -2219,13 +3017,32 @@
           <ul class="legend-list">${legend(fixedBd)}</ul>
         </div>
         <div class="card">
-          <h2>変動費の内訳<span style="font-size:11px;color:var(--ink-soft);font-weight:400;"> ／ 予算はマイページと支出タブから設定できます</span></h2>
+          <h2>変動費の内訳<span style="font-size:11px;color:var(--ink-soft);font-weight:400;"> ／ 予算は支出タブから設定できます${hasMonthBudget(currentMonth) ? "（この月は個別の予算）" : ""}</span></h2>
           <ul class="legend-list with-budget">${legendWithBudget(variableBd)}</ul>
         </div>
       </div>
+      <div class="card year-card">
+        <h2>${year}年の推移</h2>
+        <div class="year-legend">
+          <span><span class="cat-dot" style="background:#3F8564"></span>収入</span>
+          <span><span class="cat-dot" style="background:#B4623F"></span>支出（固定＋変動）</span>
+          <span><span class="cat-dot" style="background:#B4913A"></span>貯金・積立</span>
+        </div>
+        <div class="year-chart" id="yearChart"></div>
+        <div class="table-scroll"><table class="year-table">
+          <thead><tr><th>月</th><th class="amt">収入</th><th class="amt">支出</th><th class="amt">貯金・積立</th><th class="amt">収支</th></tr></thead>
+          <tbody>
+            ${ys.months.map(function(m){
+              return `<tr class="${m.key === currentMonth ? "is-current" : ""}"><td>${m.month}月</td><td class="amt">${yen(m.income)}</td><td class="amt">${yen(m.expense)}</td><td class="amt">${yen(m.saving)}</td><td class="amt ${m.balance < 0 ? "minus" : ""}">${yen(m.balance)}</td></tr>`;
+            }).join("")}
+            <tr class="subtotal-row"><td>年間合計</td><td class="amt">${yen(yt.income)}</td><td class="amt">${yen(yt.expense)}</td><td class="amt">${yen(yt.saving)}</td><td class="amt ${yt.balance < 0 ? "minus" : ""}">${yen(yt.balance)}</td></tr>
+          </tbody>
+        </table></div>
+        <p class="hint" style="margin:12px 0 0;">${year}年の医療費（カテゴリー「医療費」の合計）：<strong>${yen(ys.medical)}</strong>　医療費控除の目安を確認するときにお使いください（保険で補填された金額などは差し引かれていません）。</p>
+      </div>
     `;
     // stash breakdown for chart drawing
-    renderDashboardPanel._ctx = {totalIncome, totalFixed, totalVariable, totalSaving, balance, fixedBd, variableBd};
+    renderDashboardPanel._ctx = {totalIncome, totalFixed, totalVariable, totalSaving, balance, fixedBd, variableBd, yearMonths: ys.months};
     if(activeTab === "dashboard") drawCharts();
     if(el("pdfExportBtn")){
       el("pdfExportBtn").onclick = exportMonthlyPDF;
@@ -2246,7 +3063,7 @@
       bars += `
         <rect x="${x}" y="${y}" width="${barW}" height="${bh}" rx="5" fill="${it.color}"></rect>
         <text x="${x+barW/2}" y="${y-7}" text-anchor="middle" font-size="10.5" fill="#26313A" font-weight="600">${yen(it.value)}</text>
-        <text x="${x+barW/2}" y="${h-9}" text-anchor="middle" font-size="11" fill="#5C6B74">${it.label}</text>
+        <text x="${x+barW/2}" y="${h-9}" text-anchor="middle" font-size="11" fill="#5C6B74">${escapeHtml(it.label)}</text>
       `;
     });
     return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="100%" role="img" aria-label="収入・固定費・変動費・貯金の比較棒グラフ">
@@ -2283,9 +3100,46 @@
     </svg>`;
   }
 
+  // 年間の推移：月ごとに「収入・支出・貯金」の3本を並べた棒グラフ
+  function drawYearChartSVG(months){
+    const w = 720, h = 230, padL = 46, padR = 8, padTop = 12, padBottom = 26;
+    const max = Math.max(1, Math.max.apply(null, months.map(function(m){ return Math.max(m.income, m.expense, m.saving); })));
+    // 目盛りは「万円」単位のきりのよい値にする
+    const steps = [1,2,5,10,20,50,100,200,500,1000];
+    let stepMan = steps[steps.length - 1];
+    for(let i=0; i<steps.length; i++){ if(max / (steps[i] * 10000) <= 4){ stepMan = steps[i]; break; } }
+    const top = Math.ceil(max / (stepMan * 10000)) * stepMan * 10000;
+    const plotH = h - padTop - padBottom;
+    const plotW = w - padL - padR;
+    const groupW = plotW / 12;
+    const barW = Math.min(12, (groupW - 8) / 3);
+    const y = function(v){ return padTop + plotH - (v / top) * plotH; };
+    let grid = "";
+    for(let v = 0; v <= top + 1; v += stepMan * 10000){
+      grid += `<line x1="${padL}" y1="${y(v)}" x2="${w - padR}" y2="${y(v)}" stroke="#EFE9DB"></line>
+        <text x="${padL - 6}" y="${y(v) + 3.5}" text-anchor="end" font-size="10" fill="#5C6B74">${v === 0 ? "0" : (v / 10000) + "万"}</text>`;
+    }
+    const colors = ["#3F8564", "#B4623F", "#B4913A"];
+    let bars = "";
+    months.forEach(function(m, i){
+      const gx = padL + i * groupW + (groupW - barW * 3 - 4) / 2;
+      [m.income, m.expense, m.saving].forEach(function(v, j){
+        if(v <= 0) return;
+        const bh = Math.max(1.5, (v / top) * plotH);
+        bars += `<rect x="${gx + j * (barW + 2)}" y="${padTop + plotH - bh}" width="${barW}" height="${bh}" rx="2" fill="${colors[j]}"><title>${m.month}月 ${["収入","支出","貯金・積立"][j]} ${yen(v)}</title></rect>`;
+      });
+      bars += `<text x="${padL + i * groupW + groupW / 2}" y="${h - 8}" text-anchor="middle" font-size="10.5" fill="#5C6B74">${m.month}月</text>`;
+    });
+    return `<svg viewBox="0 0 ${w} ${h}" width="100%" role="img" aria-label="1年間の月ごとの収入・支出・貯金の棒グラフ">${grid}${bars}</svg>`;
+  }
+
   function drawCharts(){
     const ctx = renderDashboardPanel._ctx;
     if(!ctx) return;
+    const yearBox = el("yearChart");
+    if(yearBox && ctx.yearMonths){
+      yearBox.innerHTML = drawYearChartSVG(ctx.yearMonths);
+    }
     const barBox = el("barChart");
     if(barBox){
       barBox.innerHTML = drawBarChartSVG([
@@ -2302,7 +3156,7 @@
   }
 
   function escapeHtml(s){
-    return s.replace(/[&<>"']/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
+    return String(s == null ? "" : s).replace(/[&<>"']/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
   }
 
   function showFatalError(){
@@ -2411,9 +3265,9 @@
         <h2>家計を始める</h2>
         <p class="hint">ログインしました（${escapeHtml(user.email || "")}）。新しく家計を作成するか、パートナーや友人から共有された招待コードを入力して参加してください。</p>
         <button class="add-btn" id="hh-create-btn" style="width:100%;margin-bottom:18px;">新しい家計を始める</button>
-        <div class="field"><label>招待コード（パートナー・友人から共有されたもの）</label><input type="text" id="hh-code-input" placeholder="例：ab12cd34ef56..."></div>
+        <div class="field"><label>招待コード（パートナー・友人から共有されたもの）</label><input type="text" id="hh-code-input" autocapitalize="characters" autocomplete="off" placeholder="例：ABCD-EFGH-JKLM"></div>
         <button class="ghost-btn" id="hh-join-btn" style="width:100%;">招待コードで参加する</button>
-        <p class="hint" style="margin-top:10px;">以前（ログイン機能を追加する前）から使っていたデータを引き継ぐ場合は、招待コードの欄に次の値を入力してください。<br><code style="font-size:11px;word-break:break-all;">${LEGACY_HOUSEHOLD_ID}</code></p>
+        <p class="hint" style="margin-top:10px;">すでにパートナーが使っている家計に参加する場合は、パートナーの「マイページ」に表示される招待コードを入力してください。</p>
         ${errorMsg ? `<p style="color:var(--danger);font-size:12.5px;margin:12px 0 0;">${escapeHtml(errorMsg)}</p>` : ""}
       </div>
       <div class="card" style="max-width:460px;margin:0 auto;">
@@ -2429,7 +3283,8 @@
       });
     };
     el("hh-join-btn").onclick = function(){
-      const code = el("hh-code-input").value.trim();
+      // 大文字・小文字やハイフン・空白の違いは気にせず入力できるようにする
+      const code = toHalfWidth(el("hh-code-input").value).toUpperCase().replace(/[^A-Z0-9]/g, "");
       if(!code){
         renderHouseholdSetup(user, resolve, "招待コードを入力してください。");
         return;
@@ -2438,7 +3293,9 @@
         resolve(id);
       }).catch(function(e){
         console.error(e);
-        renderHouseholdSetup(user, resolve, "参加に失敗しました。招待コードをご確認ください。");
+        renderHouseholdSetup(user, resolve, (e && e.message === "invite-not-found")
+          ? "この招待コードは見つかりませんでした。最新の招待コードをパートナーに確認してください。"
+          : "参加に失敗しました。招待コードが作り直された可能性があります。最新の招待コードをご確認ください。");
       });
     };
     el("hh-logout-btn").onclick = function(){
