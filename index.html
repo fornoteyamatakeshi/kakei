@@ -269,6 +269,11 @@
   .save-status.show{opacity:1;transform:none;}
   .save-status.error{background:var(--danger);max-width:calc(100% - 36px);border-radius:12px;line-height:1.6;}
   .warn-text{color:var(--danger) !important;}
+  .migration-notice{
+    background:#FBF6E9;border:1px solid #E9D9AE;border-radius:10px;padding:10px 12px;
+    font-size:12.5px;line-height:1.7;color:var(--ink);margin:0 0 14px;
+  }
+  .migration-notice strong{display:block;color:#8A5E10;margin-bottom:2px;}
   [hidden]{display:none !important;}
   .btn-row{display:flex;gap:8px;margin-top:8px;}
   .btn-row .ghost-btn{flex:1;min-height:38px;}
@@ -3276,6 +3281,11 @@
         <div class="field"><label>メールアドレス</label><input type="email" id="auth-email" autocomplete="email"></div>
         <div class="field"><label>パスワード</label><input type="password" id="auth-password" autocomplete="${mode === "register" ? "new-password" : "current-password"}"></div>
         ${errorMsg ? `<p style="color:var(--danger);font-size:12.5px;margin:-4px 0 12px;">${escapeHtml(errorMsg)}</p>` : ""}
+        ${mode === "login" ? `
+        <div class="migration-notice">
+          <strong>2026年10月12日にサーバーを移行しました</strong>
+          以前のアカウントではログインできません。お手数ですが、下の「はじめての方はこちら（新規登録）」から、<b>同じメールアドレスで登録し直して</b>ください。これまでの記録は、書き出したファイルをマイページの「読み込む」で引き継げます。パートナーは、マイページの招待コードで参加できます。
+        </div>` : ""}
         <button class="add-btn" id="auth-submit-btn" style="width:100%;margin-bottom:10px;">${mode === "register" ? "登録する" : "ログインする"}</button>
         <button class="ghost-btn" id="auth-toggle-btn" style="width:100%;">${mode === "register" ? "すでにアカウントをお持ちの方はこちら" : "はじめての方はこちら（新規登録）"}</button>
       </div>
@@ -3300,7 +3310,20 @@
       const action = mode === "register" ? window.firebaseSync.auth.register : window.firebaseSync.auth.login;
       action(email, password).catch(function(e){
         console.error("認証エラー:", e);
-        renderAuthGate(mode, "ログインに失敗しました。メールアドレス・パスワードをご確認ください。");
+        const code = (e && e.code) || "";
+        let msg = "ログインに失敗しました。メールアドレス・パスワードをご確認ください。";
+        if(mode === "login" && /invalid-credential|user-not-found|wrong-password|invalid-login/.test(code)){
+          msg = "ログインできませんでした。サーバー移行前のアカウントの場合は、「新規登録」から同じメールアドレスで登録し直してください。";
+        }else if(mode === "register" && /email-already-in-use/.test(code)){
+          msg = "このメールアドレスはすでに登録されています。「すでにアカウントをお持ちの方はこちら」からログインしてください。";
+        }else if(mode === "register" && /weak-password/.test(code)){
+          msg = "パスワードは6文字以上で入力してください。";
+        }else if(mode === "register" && /invalid-email/.test(code)){
+          msg = "メールアドレスの形式が正しくありません。";
+        }else if(mode === "register"){
+          msg = "登録に失敗しました。メールアドレス・パスワード（6文字以上）をご確認ください。";
+        }
+        renderAuthGate(mode, msg);
       });
       // 成功時はonAuthStateChangedのコールバック側で画面遷移するため、ここでは何もしない
     };
