@@ -209,6 +209,17 @@
     line-height:1;padding:2px 6px;border-radius:6px;
   }
   .del:hover{background:#F3E3E0;color:var(--danger);}
+  /* 記録の編集（✎ボタンと、行内に開く編集フォーム） */
+  .row-actions{white-space:nowrap;text-align:right;}
+  .edit{
+    background:none;border:none;color:var(--ink-soft);cursor:pointer;font-size:14px;
+    line-height:1;padding:2px 6px;border-radius:6px;
+  }
+  .edit:hover{background:#E8EEF5;color:var(--indigo-deep);}
+  .edit-row td{background:#F7F2E6;}
+  .edit-form{margin:2px 0;}
+  .edit-actions{display:flex;gap:8px;}
+  .edit-actions .add-btn,.edit-actions .ghost-btn{min-height:44px;}
   .empty-row{color:var(--ink-soft);font-size:13px;text-align:center;padding:22px 0;}
   .cat-tag{
     font-size:11px;padding:2px 8px;border-radius:999px;color:#fff;white-space:nowrap;
@@ -303,6 +314,8 @@
     /* 日付欄はブラウザ標準のカレンダー部品を含み、他の項目と1行を分け合うと
        窮屈になりやすいため、2列レイアウトの間も常に1行を専有させる */
     .field-date{grid-column:1/-1;}
+    .edit-actions{grid-column:1/-1;}
+    .edit-actions .add-btn,.edit-actions .ghost-btn{flex:1;}
     .stat-grid{grid-template-columns:1fr 1fr;}
     .charts,.breakdown{grid-template-columns:1fr;}
   }
@@ -324,13 +337,15 @@
     .mode-banner{flex-direction:column;align-items:stretch;}
     .mode-actions{width:100%;}
     .ghost-btn{flex:1;}
+    /* 編集フォームを開いている表は、横スクロールせずに画面幅へ収める */
+    table.has-edit{min-width:0;}
   }
 
   /* タッチ操作の端末（スマートフォン・タブレット）では、ボタンなどの
      タップ領域を少し広めに取る。JS側で <html> に is-touch クラスを
      付与して判定している（画面幅だけでなく入力方式でも判定するため）。 */
   .is-touch .add-btn,.is-touch .ghost-btn,.is-touch .tab-btn{min-height:40px;}
-  .is-touch .del{min-width:32px;min-height:32px;display:inline-flex;align-items:center;justify-content:center;}
+  .is-touch .del,.is-touch .edit{min-width:32px;min-height:32px;display:inline-flex;align-items:center;justify-content:center;}
 
   /* PDF出力ボタンを目立たせるためのカード枠（通常の画面表示用） */
   .print-card{border:1px dashed var(--indigo);background:#F2F6FA;}
@@ -578,6 +593,9 @@
   // currentPage: "main" = 収支の記録・ダッシュボード / "mypage" = マイページ（設定）
   let currentPage = "main";
   let menuOpen = false;
+  // 編集中の記録。同時に開ける編集フォームは1件だけにして、画面を分かりやすく保つ。
+  // 例：{kind:"expenses", id:"lx3k..."}。編集していないときは null。
+  let editing = null;
   // storageMode: "cloud"    = Claudeアーティファクトの共有ストレージ
   //              "realtime" = Firebase Realtime Databaseでの即時共有
   //              "local"    = この端末のブラウザ内保存のみ
@@ -797,6 +815,38 @@
     }
     data[kind] = data[kind].filter(function(x){ return x.id !== id; });
     return saveData();
+  }
+
+  // 既存の記録1件の内容（日付・区分・メモ・金額）を書き換える。
+  // realtimeモードでは同じIDのパスに上書き保存するだけなので、相手の端末にも
+  // 追加・削除と同じ仕組みで即座に反映される。記録者（addedBy）は元のまま残す。
+  function persistUpdate(kind, id, changes){
+    let idx = -1;
+    for(let i=0; i<data[kind].length; i++){
+      if(data[kind][i].id === id){ idx = i; break; }
+    }
+    if(idx < 0) return Promise.resolve();
+    const updated = Object.assign({}, data[kind][idx], changes);
+    function applyLocal(){
+      data[kind][idx] = updated;
+      return saveData();
+    }
+    if(storageMode === "realtime"){
+      const clone = Object.assign({}, updated);
+      delete clone.id;
+      return window.firebaseSync.writeRecord(HOUSEHOLD_ID, kind, id, clone).then(function(){
+        flashSaved();
+        sendNtfyNotification(
+          "ふたり家計簿：" + kindLabel(kind) + "が修正されました",
+          updated.date + "　" + yen(updated.amount) + (updated.memo ? "　" + updated.memo : "")
+        );
+      }).catch(function(e){
+        console.error("リアルタイム保存に失敗したため、この端末内保存に切り替えます:", e);
+        storageMode = "local";
+        return applyLocal();
+      });
+    }
+    return applyLocal();
   }
 
   // レコード（収入・支出・貯金）に共通の項目を組み立てる。
@@ -1507,6 +1557,7 @@
     const [y,mo] = currentMonth.split("-").map(Number);
     const d = new Date(y, mo-1+delta, 1);
     currentMonth = d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0");
+    editing = null;
     render();
   }
   function inMonth(dateStr){ return dateStr && dateStr.slice(0,7) === currentMonth; }
@@ -1729,13 +1780,16 @@
     if(!el("panel-income")) return;
     const monthly = data.incomes.filter(i=>inMonth(i.date));
     const rows = monthly.slice().sort((a,b)=> b.date.localeCompare(a.date)).map(i=>{
+      if(isEditing("incomes", i.id)){
+        return editRowHtml("incomes", i, INCOME_CATS.map(c=>({value:c.key, label:c.label})), "区分");
+      }
       const cat = INCOME_CATS.find(c=>c.key===i.category);
       return `<tr>
         <td>${i.date}${addedByTag(i)}</td>
         <td><span class="cat-tag" style="background:${cat.color}">${cat.label}</span></td>
         <td>${escapeHtml(i.memo||"")}</td>
         <td class="amt">${yen(i.amount)}</td>
-        <td><button class="del" data-kind="incomes" data-id="${i.id}">×</button></td>
+        <td class="row-actions">${rowActionsHtml("incomes", i.id)}</td>
       </tr>`;
     }).join("");
     const total = monthly.reduce((s,i)=>s+i.amount,0);
@@ -1773,20 +1827,23 @@
         renderIncomePanel(); renderDashboardPanel();
       });
     };
-    bindDelete("panel-income");
+    bindRowActions("panel-income");
   }
 
   // ---------- Expense ----------
   function expenseTable(type, cats, title, shortLabel, hint){
     const monthly = data.expenses.filter(e=>inMonth(e.date) && e.type===type);
     const rows = monthly.slice().sort((a,b)=> b.date.localeCompare(a.date)).map(e=>{
+      if(isEditing("expenses", e.id)){
+        return editRowHtml("expenses", e, cats.map(c=>({value:c.key, label:c.key})), "カテゴリー");
+      }
       const cat = cats.find(c=>c.key===e.category) || {color:"#999"};
       return `<tr>
         <td>${e.date}${addedByTag(e)}</td>
         <td><span class="cat-tag" style="background:${cat.color}">${e.category}</span></td>
         <td>${escapeHtml(e.memo||"")}</td>
         <td class="amt">${yen(e.amount)}</td>
-        <td><button class="del" data-kind="expenses" data-id="${e.id}">×</button></td>
+        <td class="row-actions">${rowActionsHtml("expenses", e.id)}</td>
       </tr>`;
     }).join("");
     const total = monthly.reduce((s,e)=>s+e.amount,0);
@@ -1890,7 +1947,7 @@
     chain.then(function(){
       renderExpensePanel();
       renderDashboardPanel();
-      alert(prevFixed.length + "件の固定費をコピーしました。金額が変わっている場合は、内容を修正してください。");
+      alert(prevFixed.length + "件の固定費をコピーしました。金額が変わっている場合は、一覧の ✎ ボタンから修正してください。");
     });
   }
 
@@ -1907,7 +1964,7 @@
       expenseTable("fixed", FIXED_CATS, "固定費を入力する", "固定費", "毎月ほぼ一定額かかる支出です（家賃・住宅ローン、光熱費、通信費、保険料、サブスクなど）。") +
       `<div class="card" style="margin-top:-8px;">
         <button class="ghost-btn" id="copyLastMonthFixedBtn" style="width:100%;">📋 先月の固定費をコピーする</button>
-        <p class="hint" style="margin-top:8px;margin-bottom:0;">先月登録した固定費（家賃・光熱費など）を、今月分としてまとめてコピーします。金額が変わっていれば、コピー後に修正してください。</p>
+        <p class="hint" style="margin-top:8px;margin-bottom:0;">先月登録した固定費（家賃・光熱費など）を、今月分としてまとめてコピーします。金額が変わっていれば、コピー後に一覧の ✎ ボタンから修正してください。</p>
       </div>` +
       `<div class="card budget-panel">
         <h2>💰 変動費の予算</h2>
@@ -1939,7 +1996,7 @@
         });
       };
     });
-    bindDelete("panel-expense");
+    bindRowActions("panel-expense");
   }
 
   // ---------- Saving ----------
@@ -1947,13 +2004,16 @@
     if(!el("panel-saving")) return;
     const monthly = data.savings.filter(s=>inMonth(s.date));
     const rows = monthly.slice().sort((a,b)=> b.date.localeCompare(a.date)).map(s=>{
+      if(isEditing("savings", s.id)){
+        return editRowHtml("savings", s, SAVING_CATS.map(c=>({value:c.key, label:c.label})), "区分");
+      }
       const cat = SAVING_CATS.find(c=>c.key===s.category);
       return `<tr>
         <td>${s.date}${addedByTag(s)}</td>
         <td><span class="cat-tag" style="background:${cat.color}">${cat.label}</span></td>
         <td>${escapeHtml(s.memo||"")}</td>
         <td class="amt">${yen(s.amount)}</td>
-        <td><button class="del" data-kind="savings" data-id="${s.id}">×</button></td>
+        <td class="row-actions">${rowActionsHtml("savings", s.id)}</td>
       </tr>`;
     }).join("");
     const total = monthly.reduce((s,i)=>s+i.amount,0);
@@ -1991,17 +2051,85 @@
         renderSavingPanel(); renderDashboardPanel();
       });
     };
-    bindDelete("panel-saving");
+    bindRowActions("panel-saving");
   }
 
-  // ---------- Delete (shared) ----------
-  function bindDelete(panelId){
-    each(el(panelId).querySelectorAll(".del"), function(btn){
+  // ---------- 一覧の編集・削除（収入・支出・貯金で共通） ----------
+  function isEditing(kind, id){
+    return !!editing && editing.kind === kind && editing.id === id;
+  }
+
+  function rowActionsHtml(kind, id){
+    return `<button class="edit" data-kind="${kind}" data-id="${id}" title="修正する" aria-label="修正する">✎</button>` +
+      `<button class="del" data-kind="${kind}" data-id="${id}" title="削除する" aria-label="削除する">×</button>`;
+  }
+
+  // 一覧の行の位置に、その記録の内容を入れた編集フォームを開く。
+  // options: [{value, label}]（区分・カテゴリーの選択肢）
+  function editRowHtml(kind, rec, options, catLabel){
+    const optionHtml = options.map(function(o){
+      return `<option value="${escapeHtml(o.value)}"${o.value === rec.category ? " selected" : ""}>${escapeHtml(o.label)}</option>`;
+    }).join("");
+    return `<tr class="edit-row"><td colspan="5">
+      <div class="entry-form with-cat edit-form" data-kind="${kind}" data-id="${rec.id}">
+        <div class="field field-date"><label>日付</label><input type="date" class="ed-date" value="${escapeHtml(rec.date || "")}"></div>
+        <div class="field"><label>${catLabel}</label><select class="ed-cat">${optionHtml}</select></div>
+        <div class="field"><label>メモ（任意）</label><input type="text" class="ed-memo" value="${escapeHtml(rec.memo || "")}"></div>
+        <div class="field"><label>金額</label><input type="number" class="ed-amount" min="0" value="${rec.amount}"></div>
+        <div class="edit-actions">
+          <button class="add-btn ed-save">保存する</button>
+          <button class="ghost-btn ed-cancel">キャンセル</button>
+        </div>
+      </div>
+    </td></tr>`;
+  }
+
+  function rerenderRecordPanels(){
+    renderIncomePanel(); renderExpensePanel(); renderSavingPanel(); renderDashboardPanel();
+  }
+
+  function bindRowActions(panelId){
+    const panel = el(panelId);
+    // スマートフォン幅で編集フォームが画面外にはみ出さないよう、編集中の表に印を付ける
+    each(panel.querySelectorAll(".edit-row"), function(row){
+      const table = row.closest("table");
+      if(table) table.classList.add("has-edit");
+    });
+    each(panel.querySelectorAll(".del"), function(btn){
       btn.onclick = function(){
         const kind = btn.dataset.kind, id = btn.dataset.id;
-        persistDelete(kind, id).then(function(){
-          renderIncomePanel(); renderExpensePanel(); renderSavingPanel(); renderDashboardPanel();
-        });
+        if(isEditing(kind, id)) editing = null;
+        persistDelete(kind, id).then(rerenderRecordPanels);
+      };
+    });
+    each(panel.querySelectorAll(".edit"), function(btn){
+      btn.onclick = function(){
+        editing = { kind: btn.dataset.kind, id: btn.dataset.id };
+        rerenderRecordPanels();
+        const amountInput = el(panelId).querySelector(".edit-form .ed-amount");
+        if(amountInput) amountInput.focus();
+      };
+    });
+    each(panel.querySelectorAll(".edit-form"), function(form){
+      const kind = form.dataset.kind, id = form.dataset.id;
+      form.querySelector(".ed-cancel").onclick = function(){
+        editing = null;
+        rerenderRecordPanels();
+      };
+      form.querySelector(".ed-save").onclick = function(){
+        const amountInput = form.querySelector(".ed-amount");
+        const amount = parseFloat(amountInput.value);
+        if(!amount || amount <= 0){ amountInput.focus(); return; }
+        const dateVal = form.querySelector(".ed-date").value;
+        if(!dateVal){ form.querySelector(".ed-date").focus(); return; }
+        const changes = {
+          date: dateVal,
+          category: form.querySelector(".ed-cat").value,
+          memo: form.querySelector(".ed-memo").value.trim(),
+          amount: amount
+        };
+        editing = null;
+        persistUpdate(kind, id, changes).then(rerenderRecordPanels);
       };
     });
   }
@@ -2325,21 +2453,6 @@
         renderHouseholdSetup(user, resolve);
       });
     });
-  }
-
-  // 画面幅は@media(CSS)で自動判定しているが、それに加えて「タッチで操作しているか」も
-  // 判定し、該当する場合は<html>にis-touchクラスを付与してタップ領域を広げる。
-  // ユーザーエージェント文字列の判定は機種偽装等で誤判定しやすいため使わず、
-  // 実際の入力方式（ポインターの種類）で判定している。
-  function applyDeviceClass(){
-    try{
-      const isTouch = (window.matchMedia && window.matchMedia("(pointer: coarse)").matches)
-        || ("ontouchstart" in window)
-        || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0);
-      document.documentElement.classList.toggle("is-touch", !!isTouch);
-    }catch(e){
-      console.log("デバイス判定に失敗しました（表示には影響しません）:", e);
-    }
   }
 
   function bootstrap(){
