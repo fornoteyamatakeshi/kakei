@@ -464,14 +464,16 @@
     updateEmail as fbUpdateEmail, updatePassword as fbUpdatePassword
   } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
 
+  // 接続先：2026年10月に作り直したFirebaseプロジェクト「kakeibo-2026」
+  // （以前のプロジェクト our-household-budget-68d2a からは、書き出し・読み込みでデータを移す）
   const firebaseConfig = {
-    apiKey: "AIzaSyDRoZXsH-22lmpXe9r9DlJVtZZWrd7rmUc",
-    authDomain: "our-household-budget-68d2a.firebaseapp.com",
-    databaseURL: "https://our-household-budget-68d2a-default-rtdb.asia-southeast1.firebasedatabase.app",
-    projectId: "our-household-budget-68d2a",
-    storageBucket: "our-household-budget-68d2a.firebasestorage.app",
-    messagingSenderId: "242198106288",
-    appId: "1:242198106288:web:7770d4c13eef35d8972b75"
+    apiKey: "AIzaSyDLPOehPqyRijGD9xaOsiOPBNCWFTm2v2E",
+    authDomain: "kakeibo-2026-a6154.firebaseapp.com",
+    databaseURL: "https://kakeibo-2026-a6154-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "kakeibo-2026-a6154",
+    storageBucket: "kakeibo-2026-a6154.firebasestorage.app",
+    messagingSenderId: "311998330986",
+    appId: "1:311998330986:web:db0fb30f00ceda255ff213"
   };
 
   // 世帯（household）IDや通知トピック名に使う、推測されにくいランダムな文字列。
