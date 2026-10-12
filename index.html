@@ -217,7 +217,15 @@
   }
   .edit:hover{background:#E8EEF5;color:var(--indigo-deep);}
   .edit-row td{background:#F7F2E6;}
-  .edit-form{margin:2px 0;grid-template-columns:130px 140px 1fr 110px 110px auto;}
+  .edit-form{margin:2px 0;grid-template-columns:130px 140px minmax(120px,1fr) 110px 200px;}
+  .edit-form .edit-actions{grid-column:1/-1;justify-content:flex-end;}
+  .edit-form .edit-actions .add-btn,.edit-form .edit-actions .ghost-btn{min-width:120px;}
+  .adjust-row{display:flex;gap:6px;min-width:0;}
+  .adjust-row select{width:88px;flex-shrink:0;padding-left:6px;padding-right:4px;}
+  .adjust-row input{flex:1;min-width:0;}
+  .edit-preview{grid-column:1/-1;margin:0;font-size:12.5px;color:var(--indigo-deep);font-variant-numeric:tabular-nums;}
+  .edit-preview:empty{display:none;}
+  .edit-preview.error{color:var(--danger);}
   .edit-actions{display:flex;gap:8px;}
   .edit-actions .add-btn,.edit-actions .ghost-btn{min-height:44px;}
   .empty-row{color:var(--ink-soft);font-size:13px;text-align:center;padding:22px 0;}
@@ -2790,8 +2798,9 @@
 
   // 一覧の行の位置に、その記録の内容を入れた編集フォームを開く。
   // options: [{value, label}]（区分・カテゴリーの選択肢）
-  // 「足す金額」に入力すると、今の金額に足した合計で保存する（同じ日に同じお店で
-  // 2回買い物をした場合など）。
+  // 「金額を足す・引く」に入力すると、今の金額に足した（または引いた）結果で保存する
+  // （同じ日に同じお店で2回買い物をした場合や、一部を返品した場合、入力し間違えた
+  //   場合など）。入力中は、保存後の金額をフォームの下に表示する。
   function editRowHtml(kind, rec, options, catLabel){
     // 一覧にない区分の記録でも、編集で勝手に別の区分に変わらないよう選択肢に加える
     if(!options.some(function(o){ return o.value === rec.category; })){
@@ -2806,7 +2815,16 @@
         <div class="field"><label>${catLabel}</label><select class="ed-cat">${optionHtml}</select></div>
         <div class="field"><label>メモ（任意）</label><input type="text" class="ed-memo" maxlength="100" value="${escapeHtml(rec.memo || "")}"></div>
         <div class="field"><label>金額</label>${amountInputHtml('class="ed-amount"', rec.amount)}</div>
-        <div class="field"><label>＋足す金額（任意）</label>${amountInputHtml('class="ed-plus"')}</div>
+        <div class="field field-adjust"><label>金額を足す・引く（任意）</label>
+          <div class="adjust-row">
+            <select class="ed-sign" aria-label="足すか引くかを選ぶ">
+              <option value="plus">＋ 足す</option>
+              <option value="minus">－ 引く</option>
+            </select>
+            ${amountInputHtml('class="ed-adjust" aria-label="足す・引く金額"')}
+          </div>
+        </div>
+        <p class="edit-preview" aria-live="polite"></p>
         <div class="edit-actions">
           <button class="add-btn ed-save">保存する</button>
           <button class="ghost-btn ed-cancel">キャンセル</button>
@@ -2843,27 +2861,55 @@
     });
     each(panel.querySelectorAll(".edit-form"), function(form){
       const kind = form.dataset.kind, id = form.dataset.id;
+      const amountInput = form.querySelector(".ed-amount");
+      const signSelect = form.querySelector(".ed-sign");
+      const adjustInput = form.querySelector(".ed-adjust");
+      const preview = form.querySelector(".edit-preview");
+      // 金額・足す/引く・その金額から、保存後の金額を計算する
+      function calc(){
+        const base = parseAmount(amountInput.value);
+        if(!(base > 0)) return { error: "amount" };
+        if(!adjustInput.value.trim()) return { result: base, base: base, adjust: 0 };
+        const adj = parseAmount(adjustInput.value);
+        if(!(adj > 0)) return { error: "adjust" };
+        const minus = signSelect.value === "minus";
+        const result = Math.round((minus ? base - adj : base + adj) * 100) / 100;
+        if(!(result > 0)) return { error: "negative", base: base, adjust: adj, minus: minus, result: result };
+        return { result: result, base: base, adjust: adj, minus: minus };
+      }
+      function updatePreview(){
+        const c = calc();
+        preview.classList.remove("error");
+        if(!adjustInput.value.trim()){ preview.textContent = ""; return; }
+        if(c.error === "amount"){ preview.textContent = "「金額」に正しい金額を入力してください。"; preview.classList.add("error"); return; }
+        if(c.error === "adjust"){ preview.textContent = "足す・引く金額には、1円以上の金額を入力してください。"; preview.classList.add("error"); return; }
+        const expr = yen(c.base) + (c.minus ? " － " : " ＋ ") + yen(c.adjust) + " ＝ " + yen(c.result);
+        if(c.error === "negative"){
+          preview.textContent = expr + "　引いた結果が0円以下になるため保存できません。引く金額をご確認ください（記録ごと消す場合は「×」で削除してください）。";
+          preview.classList.add("error");
+          return;
+        }
+        preview.textContent = "保存後の金額：" + expr;
+      }
+      amountInput.oninput = updatePreview;
+      adjustInput.oninput = updatePreview;
+      signSelect.onchange = updatePreview;
+
       form.querySelector(".ed-cancel").onclick = function(){
         editing = null;
         rerenderRecordPanels();
       };
       form.querySelector(".ed-save").onclick = function(){
-        const amountInput = form.querySelector(".ed-amount");
-        const plusInput = form.querySelector(".ed-plus");
-        const amount = parseAmount(amountInput.value);
-        if(!(amount > 0)){ amountInput.focus(); return; }
-        let plus = 0;
-        if(plusInput.value.trim()){
-          plus = parseAmount(plusInput.value);
-          if(!(plus > 0)){ plusInput.focus(); return; }
-        }
+        const c = calc();
+        if(c.error === "amount"){ amountInput.focus(); return; }
+        if(c.error){ updatePreview(); adjustInput.focus(); return; }
         const dateVal = form.querySelector(".ed-date").value;
         if(!dateVal){ form.querySelector(".ed-date").focus(); return; }
         const changes = {
           date: dateVal,
           category: form.querySelector(".ed-cat").value,
           memo: form.querySelector(".ed-memo").value.trim(),
-          amount: Math.round((amount + plus) * 100) / 100
+          amount: c.result
         };
         editing = null;
         persistUpdate(kind, id, changes).then(rerenderRecordPanels);
