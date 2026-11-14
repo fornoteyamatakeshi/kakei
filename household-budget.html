@@ -447,6 +447,35 @@
   #pdfRenderContainer .print-summary td.print-summary-value{font-size:16px;font-weight:700;text-align:right;}
   #pdfRenderContainer .print-empty{color:#777;font-size:11px;padding:6px 0;}
   #pdfRenderContainer .print-footer{margin-top:22px;font-size:10px;color:#777;border-top:1px solid #ccc;padding-top:7px;}
+  /* 在庫・防災・買い物・献立（仕様 v1.1 追加分） */
+  .tab-badge{display:inline-block;min-width:18px;margin-left:6px;padding:0 5px;border-radius:9px;background:#C0392B;color:#fff;font-size:11px;font-weight:700;line-height:18px;text-align:center;vertical-align:2px;}
+  .segcard{padding-bottom:12px;}
+  .segrow{display:flex;gap:8px;margin-bottom:10px;}
+  .segnav{flex:1;}
+  .segnav.active{background:var(--indigo-deep);color:#fff;border-color:var(--indigo-deep);}
+  .segbar{display:flex;background:#EFE7D4;border-radius:10px;padding:4px;gap:4px;}
+  .segbtn{flex:1;border:none;background:transparent;border-radius:8px;padding:9px 4px;font-weight:700;font-family:inherit;cursor:pointer;color:var(--ink-soft,#555);}
+  .segbtn.active{background:var(--indigo-deep);color:#fff;}
+  .chiprow{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0;}
+  .chip{border:1px solid #D8CFBB;background:#fff;border-radius:999px;padding:6px 12px;font-family:inherit;cursor:pointer;}
+  .chip.active{background:#2E7D5B;color:#fff;border-color:#2E7D5B;}
+  .itemrow{display:flex;align-items:center;gap:8px;padding:10px 2px;border-bottom:1px solid #EFE7D4;flex-wrap:wrap;}
+  .itemrow.checked{opacity:.55;}
+  .itemmain{flex:1;min-width:140px;}
+  .draftrow{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #EFE7D4;flex-wrap:wrap;}
+  .draftmain{flex:1;min-width:120px;}
+  .draft-amount{width:110px;}
+  .expiry{font-weight:700;white-space:nowrap;}
+  .expiry.expired{color:#C0392B;}
+  .expiry.near{color:#B8860B;}
+  .bar{height:10px;background:#EFE7D4;border-radius:5px;overflow:hidden;margin:4px 0 8px;}
+  .bar .fill{height:100%;background:#2E7D5B;}
+  .sufrow{margin-bottom:10px;}
+  .sufhead{display:flex;justify-content:space-between;font-weight:600;}
+  .consulttext{width:100%;margin-top:10px;font-family:inherit;}
+  .contextcard{cursor:pointer;border-left:6px solid #C0392B;}
+  .shopcheck{display:flex;gap:8px;align-items:flex-start;flex:1;cursor:pointer;}
+  .shopcheck input{width:20px;height:20px;margin-top:2px;}
 </style>
 </head>
 <body>
@@ -792,9 +821,15 @@
   const todayStr = () => localDateStr(new Date());
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
 
-  let data = { incomes: [], expenses: [], savings: [], budgets: {}, budgetsByMonth: {}, settings: {} };
+  let data = { incomes: [], expenses: [], savings: [], budgets: {}, budgetsByMonth: {}, settings: {},
+    stockItems: [], bosaiItems: [], shoppingItems: [], expenseDrafts: [] };
   let currentMonth = todayStr().slice(0,7); // YYYY-MM
-  let activeTab = "income";
+  // D1: ログイン直後（起動直後）は家計簿＝ダッシュボードを最初に表示する
+  let activeTab = "dashboard";
+  // 支出タブの中の表示（支出一覧／在庫／防災備蓄／買い物リスト／献立）
+  let expenseSegment = "list";
+  let stockLocationFilter = "all";
+  let menuConfirmName = null;
   // currentPage: "main" = 収支の記録・ダッシュボード / "mypage" = マイページ（設定）
   let currentPage = "main";
   let menuOpen = false;
@@ -824,6 +859,24 @@
   }
   function plainObject(v){ return (v && typeof v === "object" && !Array.isArray(v)) ? v : {}; }
 
+  // 在庫・防災・買い物・下書きの行の整形（壊れた行は落とす）
+  function cleanNameQtyRows(list, extra){
+    if(!Array.isArray(list)) return [];
+    return list.filter(function(x){
+      return x && typeof x === "object" && x.id && typeof x.name === "string" && x.name
+        && typeof x.quantity === "number" && isFinite(x.quantity);
+    }).map(function(x){
+      const row = Object.assign({}, x);
+      (extra || []).forEach(function(k){ if(row[k] === undefined) row[k] = null; });
+      return row;
+    });
+  }
+  function cleanDrafts(list){
+    if(!Array.isArray(list)) return [];
+    return list.filter(function(x){
+      return x && typeof x === "object" && x.id && typeof x.itemName === "string" && x.itemName;
+    });
+  }
   function applyParsed(parsed){
     data.incomes = cleanRecords(parsed && parsed.incomes);
     data.expenses = cleanRecords(parsed && parsed.expenses);
@@ -831,6 +884,10 @@
     data.budgets = plainObject(parsed && parsed.budgets);
     data.budgetsByMonth = plainObject(parsed && parsed.budgetsByMonth);
     data.settings = plainObject(parsed && parsed.settings);
+    data.stockItems = cleanNameQtyRows(parsed && parsed.stockItems, ["location", "registeredDate", "pinned", "refillThreshold"]);
+    data.bosaiItems = cleanNameQtyRows(parsed && parsed.bosaiItems, ["location", "kubun", "expiryDate"]);
+    data.shoppingItems = cleanNameQtyRows(parsed && parsed.shoppingItems, ["source", "checked", "checkedAt", "draftExpenseId"]);
+    data.expenseDrafts = cleanDrafts(parsed && parsed.expenseDrafts);
   }
 
   function objectToArray(obj){
@@ -849,6 +906,10 @@
     data.budgets = plainObject(val && val.budgets);
     data.budgetsByMonth = plainObject(val && val.budgetsByMonth);
     data.settings = plainObject(val && val.settings);
+    data.stockItems = cleanNameQtyRows(objectToArray(val && val.stockItems), ["location", "registeredDate", "pinned", "refillThreshold"]);
+    data.bosaiItems = cleanNameQtyRows(objectToArray(val && val.bosaiItems), ["location", "kubun", "expiryDate"]);
+    data.shoppingItems = cleanNameQtyRows(objectToArray(val && val.shoppingItems), ["source", "checked", "checkedAt", "draftExpenseId"]);
+    data.expenseDrafts = cleanDrafts(objectToArray(val && val.expenseDrafts));
     householdMeta = {
       inviteCode: (val && val.inviteCode) || null,
       notifyTopic: (val && val.notifyTopic) || null,
@@ -1250,6 +1311,61 @@
   function persistSettings(settings){
     data.settings = settings;
     return persistPath("settings", settings);
+  }
+
+  // ---------- 在庫・防災・買い物・下書き（仕様 v1.1 の追加分） ----------
+  // 設定の既定値つきアクセサ
+  function badgeDaysSetting(){
+    const v = data.settings && data.settings.badgeDays;
+    return (typeof v === "number" && v >= 0) ? v : 7;
+  }
+  function bosaiTargetsSetting(){
+    const t = (data.settings && data.settings.bosaiTargets) || {};
+    return { water: t.water || 0, food: t.food || 0, baby: t.baby || 0 };
+  }
+  function defaultBosaiTargets(){ return { water: 6, food: 0, baby: 0 }; }
+  function effectiveBosaiTargets(){
+    return (data.settings && data.settings.bosaiTargets) ? bosaiTargetsSetting() : defaultBosaiTargets();
+  }
+  // 連携の結果（ドメインの純粋関数が返した新しい状態）を、差分だけ永続化する
+  const LINKAGE_KINDS = ["stockItems", "bosaiItems", "shoppingItems", "expenseDrafts"];
+  function persistStateDiff(kind, before, after){
+    const beforeById = {};
+    before.forEach(function(i){ beforeById[i.id] = i; });
+    const afterIds = {};
+    let chain = Promise.resolve();
+    after.forEach(function(item){
+      afterIds[item.id] = 1;
+      if(!beforeById[item.id]){
+        chain = chain.then(function(){ return persistAdd(kind, item); });
+      }else if(JSON.stringify(beforeById[item.id]) !== JSON.stringify(item)){
+        chain = chain.then(function(){ return persistUpdate(kind, item.id, item); });
+      }
+    });
+    before.forEach(function(item){
+      if(!afterIds[item.id]){
+        chain = chain.then(function(){ return persistDelete(kind, item.id); });
+      }
+    });
+    return chain;
+  }
+  function applyLinkage(mutator){
+    const before = {}, state = {};
+    LINKAGE_KINDS.forEach(function(k){
+      before[k] = JSON.parse(JSON.stringify(data[k] || []));
+      state[k] = JSON.parse(JSON.stringify(data[k] || []));
+    });
+    const result = mutator(state) || state;
+    let chain = Promise.resolve();
+    LINKAGE_KINDS.forEach(function(k){
+      chain = chain.then(function(){ return persistStateDiff(k, before[k], result[k]); });
+    });
+    return chain;
+  }
+  function refreshExpenseAndDashboard(){
+    renderExpensePanel();
+    renderDashboardPanel();
+    renderTabs();
   }
 
 
@@ -2186,7 +2302,7 @@
       </div>` : ""}
       <div class="tabs">
         <button class="tab-btn" data-tab="income">収入</button>
-        <button class="tab-btn" data-tab="expense">支出</button>
+        <button class="tab-btn" data-tab="expense">支出<span class="tab-badge" id="expenseTabBadge" hidden></span></button>
         <button class="tab-btn" data-tab="saving">貯金・資産形成</button>
         <button class="tab-btn" data-tab="dashboard">ダッシュボード</button>
         <button class="tab-btn" data-tab="search">検索</button>
@@ -2248,6 +2364,16 @@
           : (realtimeFallback
             ? `<p class="hint warn-text">共有サーバーにつながっていないため、招待コードやメンバーの設定は表示できません。通信環境の良い場所で再読み込みしてください。</p>`
             : `<p class="hint">ログインしていません。この端末だけにデータを保存しています。</p>`)}
+      </div>
+      <div class="card">
+        <h2>在庫・防災・献立の設定</h2>
+        <p class="hint">防災備蓄の期限が「近い」と判定する日数と、備蓄の目標量、献立の相談文で避けたい食材を設定します。</p>
+        <div class="field"><label>期限が近いとする日数</label><input type="number" id="set-badge-days" min="0" step="1" value="${badgeDaysSetting()}"></div>
+        <div class="field"><label>防災の目標：水</label><input type="number" id="set-bosai-water" min="0" step="1" value="${effectiveBosaiTargets().water}"></div>
+        <div class="field"><label>防災の目標：食料</label><input type="number" id="set-bosai-food" min="0" step="1" value="${effectiveBosaiTargets().food}"></div>
+        <div class="field"><label>防災の目標：赤ちゃん用品</label><input type="number" id="set-bosai-baby" min="0" step="1" value="${effectiveBosaiTargets().baby}"></div>
+        <div class="field"><label>避けたい食材・苦手なもの（任意）</label><input type="text" id="set-avoid-foods" maxlength="200" value="${escapeHtml((data.settings && data.settings.avoidFoods) || "")}" placeholder="例：パクチー、辛いもの"></div>
+        <button class="add-btn" id="stockSettingsSave" style="width:100%;">設定を保存する</button>
       </div>
       ${loggedIn ? `
       <div class="card">
@@ -2336,6 +2462,18 @@
 
     el("mypage-exportBtn").onclick = exportData;
     el("mypage-csvBtn").onclick = exportCsv;
+    if(el("stockSettingsSave")) el("stockSettingsSave").onclick = function(){
+      const next = Object.assign({}, data.settings, {
+        badgeDays: Math.max(0, parseInt(el("set-badge-days").value, 10) || 0),
+        bosaiTargets: {
+          water: Math.max(0, parseInt(el("set-bosai-water").value, 10) || 0),
+          food: Math.max(0, parseInt(el("set-bosai-food").value, 10) || 0),
+          baby: Math.max(0, parseInt(el("set-bosai-baby").value, 10) || 0)
+        },
+        avoidFoods: el("set-avoid-foods").value.trim()
+      });
+      persistSettings(next).then(function(){ flashSaved("設定を保存しました"); renderDashboardPanel(); renderTabs(); });
+    };
     el("mypage-importBtn").onclick = () => el("mypage-importFile").click();
     el("mypage-importFile").onchange = (e) => {
       const file = e.target.files && e.target.files[0];
@@ -2463,6 +2601,362 @@
     }
   }
 
+
+// === KAKEIBO_DOMAIN_BEGIN ===
+// 在庫・防災備蓄・買い物リスト・献立のための純粋な計算ロジック。
+// DOM・Firebase・localStorage には触れない（テストから直接呼べるようにするため）。
+// 仕様の正は仕様書 v1.1（D1〜D6）。品目はマスタを持たず「名前」で扱う。
+const KakeiboDomain = (function(){
+const LOCATIONS = [
+{ key: "fridge", label: "冷蔵庫"},
+{ key: "freezer", label: "冷凍庫"},
+{ key: "pantry", label: "パントリー"},
+{ key: "bosaiko", label: "防災庫"}
+];
+const BOSAI_KUBUN = [
+{ key: "water", label: "水"},
+{ key: "food", label: "食料"},
+{ key: "baby", label: "赤ちゃん用品"}
+];
+function locationLabel(key){
+for(let i=0;i<LOCATIONS.length;i++) if(LOCATIONS[i].key===key) return LOCATIONS[i].label;
+return key || "";
+}
+function kubunLabel(key){
+for(let i=0;i<BOSAI_KUBUN.length;i++) if(BOSAI_KUBUN[i].key===key) return BOSAI_KUBUN[i].label;
+return key || "";
+}
+// YYYY-MM-DD 同士の暦日差（b - a）。不正な日付は null。
+function daysBetween(a, b){
+const pa = /^(\d{4})-(\d{2})-(\d{2})$/.exec(a || "");
+const pb = /^(\d{4})-(\d{2})-(\d{2})$/.exec(b || "");
+if(!pa ||!pb) return null;
+const da = Date.UTC(+pa[1], +pa[2]-1, +pa[3]);
+const db = Date.UTC(+pb[1], +pb[2]-1, +pb[3]);
+return Math.round((db - da) / 86400000);
+}
+function addDays(dateStr, n){
+const p = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr || "");
+if(!p) return dateStr;
+const d = new Date(Date.UTC(+p[1], +p[2]-1, +p[3]) + n * 86400000);
+return d.getUTCFullYear() + "-" + String(d.getUTCMonth()+1).padStart(2,"0") + "-" + String(d.getUTCDate()).padStart(2,"0");
+}
+function isValidDateStr(s){
+const p = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || "");
+if(!p) return false;
+const y = +p[1], m = +p[2], d = +p[3];
+if(m < 1 || m > 12 || d < 1 || d > 31) return false;
+const dt = new Date(Date.UTC(y, m - 1, d));
+return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+// 登録日からの経過日数。当日 = 1 日目。
+function elapsedDays(registeredDate, today){
+const diff = daysBetween(registeredDate, today);
+return diff === null? null: diff + 1;
+}
+function daysLeft(expiryDate, today){
+return daysBetween(today, expiryDate);
+}
+function bosaiStatus(item, today, badgeDays){
+const left = daysLeft(item.expiryDate, today);
+if(left === null) return "ok";
+if(left < 0) return "expired";
+if(left <= badgeDays) return "near";
+return "ok";
+}
+// 期限切れ・期限が近い防災備蓄（バッジと文脈カードの対象はこれだけ）
+function expiringBosai(bosaiItems, today, badgeDays){
+return (bosaiItems || []).filter(function(it){
+const s = bosaiStatus(it, today, badgeDays);
+return s === "expired" || s === "near";
+}).sort(function(a, b){
+return (daysLeft(a.expiryDate, today) || 0) - (daysLeft(b.expiryDate, today) || 0);
+});
+}
+function sufficiency(bosaiItems, targets){
+const t = targets || {};
+return BOSAI_KUBUN.map(function(k){
+let have = 0;
+(bosaiItems || []).forEach(function(it){ if(it.kubun === k.key) have += it.quantity || 0;});
+const target = t[k.key] || 0;
+return { kubun: k.key, label: k.label, have: have, target: target, shortage: Math.max(0, target - have)};
+});
+}
+// 在庫の並び： ピン → 経過日数の多い順 → 名前
+function stockPriorityCompare(today){
+return function(a, b){
+const pin = (b.pinned? 1: 0) - (a.pinned? 1: 0);
+if(pin!== 0) return pin;
+const ea = elapsedDays(a.registeredDate, today) || 0;
+const eb = elapsedDays(b.registeredDate, today) || 0;
+if(eb!== ea) return eb - ea;
+return String(a.name).localeCompare(String(b.name), "ja");
+};
+}
+function stockQtyByName(stockItems, name){
+let sum = 0;
+(stockItems || []).forEach(function(r){ if(r.name === name) sum += r.quantity || 0;});
+return sum;
+}
+function matchRecipe(recipe, stockItems){
+const missing = [];
+let have = 0;
+recipe.ingredients.forEach(function(ing){
+if(stockQtyByName(stockItems, ing.name) >= ing.qty) have++;
+else missing.push({ name: ing.name, need: ing.qty});
+});
+return { have: have, total: recipe.ingredients.length, missing: missing};
+}
+function recipeMaxElapsed(recipe, stockItems, today){
+let max = 0;
+recipe.ingredients.forEach(function(ing){
+(stockItems || []).forEach(function(r){
+if(r.name === ing.name){
+const e = elapsedDays(r.registeredDate, today) || 0;
+if(e > max) max = e;
+}
+});
+});
+return max;
+}
+function recipePinnedCount(recipe, stockItems){
+let n = 0;
+recipe.ingredients.forEach(function(ing){
+if((stockItems || []).some(function(r){ return r.name === ing.name && r.pinned;})) n++;
+});
+return n;
+}
+// 献立候補の並び： 在庫あり材料数 → 最大経過日数 → ピン材料数 → 名前
+function rankRecipes(recipes, stockItems, today){
+return (recipes || []).map(function(recipe){
+const m = matchRecipe(recipe, stockItems);
+return { recipe: recipe, have: m.have, total: m.total, missing: m.missing,
+maxElapsed: recipeMaxElapsed(recipe, stockItems, today), pinnedCount: recipePinnedCount(recipe, stockItems)};
+}).sort(function(a, b){
+if(b.have!== a.have) return b.have - a.have;
+if(b.maxElapsed!== a.maxElapsed) return b.maxElapsed - a.maxElapsed;
+if(b.pinnedCount!== a.pinnedCount) return b.pinnedCount - a.pinnedCount;
+return a.recipe.name.localeCompare(b.recipe.name, "ja");
+});
+}
+// 献立の相談文（案B）。アプリ側の決定的な文字列組み立てのみで、AIは使わない。
+function buildConsultText(input){
+const stockItems = input.stockItems || [];
+const bosaiItems = input.bosaiItems || [];
+const today = input.today;
+const lines = [];
+lines.push("今夜の献立を相談させてください。");
+lines.push("");
+lines.push("");
+if(stockItems.length){
+const sorted = stockItems.slice().sort(stockPriorityCompare(today));
+sorted.slice(0, 12).forEach(function(r){
+const e = elapsedDays(r.registeredDate, today);
+lines.push("・" + r.name + " ×" + r.quantity + "（" + locationLabel(r.location) + (e? "・買ってから" + e + "日目": "") + (r.pinned? "・そろそろ使いたい": "") + "）");
+});
+if(sorted.length > 12) lines.push("（ほか " + (sorted.length - 12) + " 件）");
+}else{
+lines.push("・（登録なし）");
+}
+const exp = expiringBosai(bosaiItems, today, 30);
+if(exp.length){
+lines.push("");
+lines.push("（使ってよいかは相談のうえ判断します）");
+exp.slice(0, 5).forEach(function(r){
+lines.push("・" + r.name + " ×" + r.quantity + "（期限 " + r.expiryDate + "）");
+});
+}
+if(input.avoidFoods){
+lines.push("");
+lines.push("");
+lines.push(input.avoidFoods);
+}
+lines.push("");
+lines.push("お願い：");
+lines.push("・今ある食材をなるべく使う献立を、主菜＋副菜か汁物で提案してください");
+lines.push("・足りない食材があれば、最小限で教えてください");
+lines.push("・買ってから日数が経った食材を優先して使う提案だと助かります");
+lines.push("");
+lines.push("※この文は家計簿アプリが自動で組み立てたものです。アプリ自体はAIを使っていません。");
+return lines.join("\n");
+}
+// 品目名のある確定支出から、品目ごとの平均単価（合計金額÷合計数量）
+function priceHistory(expenses){
+const map = {};
+(expenses || []).forEach(function(e){
+if(!e.itemName ||!(e.amount > 0)) return;
+const qty = e.quantity > 0? e.quantity: 1;
+if(!map[e.itemName]) map[e.itemName] = { name: e.itemName, totalAmount: 0, totalQty: 0, count: 0};
+map[e.itemName].totalAmount += e.amount;
+map[e.itemName].totalQty += qty;
+map[e.itemName].count++;
+});
+return Object.keys(map).map(function(k){
+const v = map[k];
+return { name: v.name, avg: Math.round(v.totalAmount / v.totalQty), count: v.count};
+}).sort(function(a, b){ return b.count - a.count || a.name.localeCompare(b.name, "ja");});
+}
+// 食費の見通し（連携⑤）。month = "YYYY-MM"。データがなければ null。
+function foodForecast(expenses, month, today, foodCategory){
+const cat = foodCategory || "食費";
+const inMonth = (expenses || []).filter(function(e){ return e.date && e.date.slice(0, 7) === month && e.category === cat;});
+if(!inMonth.length) return null;
+const spent = inMonth.reduce(function(s, e){ return s + e.amount;}, 0);
+const isCurrent = today.slice(0, 7) === month;
+const elapsed = isCurrent? (+today.slice(8, 10)): 0;
+const lastDay = new Date(+month.slice(0, 4), +month.slice(5, 7), 0).getDate();
+if(!isCurrent || elapsed <= 0) return { spent: spent, projected: spent, daysInMonth: lastDay, elapsedDays: lastDay};
+return { spent: spent, projected: Math.round(spent / elapsed * lastDay), daysInMonth: lastDay, elapsedDays: elapsed};
+}
+// ---------- 入力チェック ----------
+function validateNameQty(name, qty){
+if(!name ||!String(name).trim()) return "品目名を入力してください";
+if(!(qty > 0)) return "数量は0より大きい数にしてください";
+return null;
+}
+function validateStockInput(input){
+return validateNameQty(input.name, input.quantity);
+}
+function validateBosaiInput(input){
+const base = validateNameQty(input.name, input.quantity);
+if(base) return base;
+if(!input.expiryDate) return "防災備蓄には期限が必要です";
+if(!isValidDateStr(input.expiryDate)) return "期限の日付が正しくありません";
+return null;
+}
+function validateShoppingInput(input){
+return validateNameQty(input.name, input.quantity);
+}
+// ---------- 連携（状態を受け取り、新しい状態を返す純粋関数） ----------
+function cloneState(state){
+return JSON.parse(JSON.stringify({
+stockItems: state.stockItems || [], bosaiItems: state.bosaiItems || [],
+shoppingItems: state.shoppingItems || [], expenseDrafts: state.expenseDrafts || []
+}));
+}
+function findShopping(state, name){
+return state.shoppingItems.find(function(s){ return s.name === name &&!s.checked;}) || null;
+}
+function addShoppingIfAbsent(state, entry){
+if(findShopping(state, entry.name)) return state;
+state.shoppingItems.push(entry);
+return state;
+}
+// 連携②: 在庫が補充しきい値以下になったら買い物リストへ（数値しきい値のある行だけ）
+function applyThreshold(state, row, mkId){
+if(!row ||!(typeof row.refillThreshold === "number")) return state;
+if(row.quantity > row.refillThreshold) return state;
+return addShoppingIfAbsent(state, { id: mkId(), name: row.name, quantity: 1, source: "stock", checked: false, checkedAt: null, draftExpenseId: null});
+}
+function applyStockQuantityChange(state0, stockId, newQty, mkId){
+const state = cloneState(state0);
+const row = state.stockItems.find(function(r){ return r.id === stockId;});
+if(!row) return state;
+row.quantity = newQty;
+return applyThreshold(state, row, mkId);
+}
+// 連携①: 買い物チェック → 支出の下書き（金額は下書き側で本人が入れる）
+function checkShoppingItem(state0, shoppingId, draftId, today){
+const state = cloneState(state0);
+const item = state.shoppingItems.find(function(s){ return s.id === shoppingId;});
+if(!item || item.checked) return state;
+item.checked = true;
+item.checkedAt = today;
+if(!state.expenseDrafts.some(function(d){ return d.sourceShoppingItemId === shoppingId;})){
+state.expenseDrafts.push({ id: draftId, date: today, itemName: item.name, quantity: item.quantity, sourceShoppingItemId: shoppingId});
+item.draftExpenseId = draftId;
+}
+return state;
+}
+function uncheckShoppingItem(state0, shoppingId){
+const state = cloneState(state0);
+const item = state.shoppingItems.find(function(s){ return s.id === shoppingId;});
+if(!item) return state;
+item.checked = false;
+item.checkedAt = null;
+if(item.draftExpenseId){
+state.expenseDrafts = state.expenseDrafts.filter(function(d){ return d.id!== item.draftExpenseId;});
+item.draftExpenseId = null;
+}
+return state;
+}
+// 防災の不足分を買い物リストへ
+function addBosaiShortageToShopping(state0, name, qty, mkId){
+const state = cloneState(state0);
+return addShoppingIfAbsent(state, { id: mkId(), name: name, quantity: qty, source: "bosai", checked: false, checkedAt: null, draftExpenseId: null});
+}
+// 連携③: 献立決定 → 不足分は買い物リストへ、使った分は在庫から古い順に減らし、減った行に連携②を連鎖
+function decideMenu(state0, recipe, uses, mkId){
+const state = cloneState(state0);
+(uses || []).forEach(function(u){
+let need = u.qty;
+const shortage = Math.max(0, need - stockQtyByName(state.stockItems, u.name));
+if(shortage > 0){
+addShoppingIfAbsent(state, { id: mkId(), name: u.name, quantity: shortage, source: "menu", checked: false, checkedAt: null, draftExpenseId: null});
+}
+const rows = state.stockItems.filter(function(r){ return r.name === u.name;})
+.sort(function(a, b){ return String(a.registeredDate).localeCompare(String(b.registeredDate));});
+const touched = [];
+rows.forEach(function(r){
+if(need <= 0) return;
+const use = Math.min(r.quantity, need);
+if(use > 0){ r.quantity -= use; need -= use; touched.push(r);}
+});
+touched.forEach(function(r){ applyThreshold(state, r, mkId);});
+});
+return state;
+}
+
+    const RECIPES = [
+    { name: '親子丼', ingredients: [{ name: '鶏もも肉', qty: 1 }, { name: '卵', qty: 1 }, { name: '玉ねぎ', qty: 1 }, { name: '米', qty: 1 }, { name: '醤油', qty: 1 }, { name: 'みりん', qty: 1 }, { name: '砂糖', qty: 1 }] },
+    { name: '肉じゃが', ingredients: [{ name: '豚こま肉', qty: 1 }, { name: 'じゃがいも', qty: 1 }, { name: 'にんじん', qty: 1 }, { name: '玉ねぎ', qty: 1 }, { name: '醤油', qty: 1 }, { name: '砂糖', qty: 1 }, { name: 'みりん', qty: 1 }, { name: '酒', qty: 1 }] },
+    { name: 'カレーライス', ingredients: [{ name: '豚こま肉', qty: 1 }, { name: 'じゃがいも', qty: 1 }, { name: 'にんじん', qty: 1 }, { name: '玉ねぎ', qty: 1 }, { name: 'カレールー', qty: 1 }, { name: '米', qty: 1 }] },
+    { name: '鮭の塩焼き定食', ingredients: [{ name: '鮭', qty: 1 }, { name: '大根', qty: 1 }, { name: '味噌', qty: 1 }, { name: '豆腐', qty: 1 }, { name: 'わかめ', qty: 1 }, { name: '米', qty: 1 }] },
+    { name: 'さばの味噌煮', ingredients: [{ name: 'さば', qty: 1 }, { name: '味噌', qty: 1 }, { name: 'しょうが', qty: 1 }, { name: '砂糖', qty: 1 }, { name: '酒', qty: 1 }, { name: 'みりん', qty: 1 }] },
+    { name: '豚の生姜焼き', ingredients: [{ name: '豚こま肉', qty: 1 }, { name: 'しょうが', qty: 1 }, { name: '醤油', qty: 1 }, { name: 'みりん', qty: 1 }, { name: '酒', qty: 1 }, { name: 'キャベツ', qty: 1 }] },
+    { name: '鶏むね肉の照り焼き', ingredients: [{ name: '鶏むね肉', qty: 1 }, { name: '醤油', qty: 1 }, { name: 'みりん', qty: 1 }, { name: '酒', qty: 1 }, { name: '砂糖', qty: 1 }] },
+    { name: '麻婆豆腐', ingredients: [{ name: '豆腐', qty: 1 }, { name: 'ひき肉', qty: 1 }, { name: '長ねぎ', qty: 1 }, { name: 'しょうが', qty: 1 }, { name: 'にんにく', qty: 1 }, { name: '味噌', qty: 1 }, { name: '醤油', qty: 1 }] },
+    { name: '野菜炒め', ingredients: [{ name: '豚こま肉', qty: 1 }, { name: 'キャベツ', qty: 1 }, { name: 'にんじん', qty: 1 }, { name: 'ピーマン', qty: 1 }, { name: 'もやし', qty: 1 }, { name: '鶏ガラスープの素', qty: 1 }] },
+    { name: '豆腐とわかめの味噌汁', ingredients: [{ name: '豆腐', qty: 1 }, { name: 'わかめ', qty: 1 }, { name: '味噌', qty: 1 }] },
+    { name: '納豆ご飯と卵焼き', ingredients: [{ name: '納豆', qty: 1 }, { name: '卵', qty: 1 }, { name: '米', qty: 1 }, { name: '海苔', qty: 1 }] },
+    { name: 'ツナとキャベツのパスタ', ingredients: [{ name: 'パスタ', qty: 1 }, { name: 'ツナ缶', qty: 1 }, { name: 'キャベツ', qty: 1 }, { name: '醤油', qty: 1 }, { name: 'バター', qty: 1 }] },
+    { name: '肉うどん', ingredients: [{ name: '冷凍うどん', qty: 1 }, { name: '豚こま肉', qty: 1 }, { name: '長ねぎ', qty: 1 }, { name: 'めんつゆ', qty: 1 }] },
+    { name: 'そばとかき揚げ', ingredients: [{ name: 'そば', qty: 1 }, { name: '玉ねぎ', qty: 1 }, { name: 'にんじん', qty: 1 }, { name: '小麦粉', qty: 1 }, { name: 'めんつゆ', qty: 1 }] },
+    { name: 'ハンバーグ', ingredients: [{ name: 'ひき肉', qty: 1 }, { name: '玉ねぎ', qty: 1 }, { name: 'パン粉', qty: 1 }, { name: '牛乳', qty: 1 }, { name: '卵', qty: 1 }, { name: 'ケチャップ', qty: 1 }] },
+    { name: 'オムライス', ingredients: [{ name: '鶏もも肉', qty: 1 }, { name: '卵', qty: 1 }, { name: '米', qty: 1 }, { name: '玉ねぎ', qty: 1 }, { name: 'ケチャップ', qty: 1 }, { name: 'バター', qty: 1 }] },
+    { name: 'チャーハン', ingredients: [{ name: '米', qty: 1 }, { name: '卵', qty: 1 }, { name: 'ハム', qty: 1 }, { name: '長ねぎ', qty: 1 }, { name: '醤油', qty: 1 }, { name: 'ごま油', qty: 1 }] },
+    { name: '焼きそば', ingredients: [{ name: '焼きそば麺', qty: 1 }, { name: '豚こま肉', qty: 1 }, { name: 'キャベツ', qty: 1 }, { name: 'にんじん', qty: 1 }, { name: 'もやし', qty: 1 }] },
+    { name: 'ほうれん草のおひたしと焼き鮭', ingredients: [{ name: 'ほうれん草', qty: 1 }, { name: '鮭', qty: 1 }, { name: '醤油', qty: 1 }] },
+    { name: '小松菜と油揚げの煮びたし', ingredients: [{ name: '小松菜', qty: 1 }, { name: '油揚げ', qty: 1 }, { name: 'めんつゆ', qty: 1 }] },
+    { name: 'ポテトサラダ', ingredients: [{ name: 'じゃがいも', qty: 1 }, { name: 'にんじん', qty: 1 }, { name: 'きゅうり', qty: 1 }, { name: 'ハム', qty: 1 }, { name: 'マヨネーズ', qty: 1 }] },
+    { name: 'にんじんしりしり', ingredients: [{ name: 'にんじん', qty: 1 }, { name: '卵', qty: 1 }, { name: 'ツナ缶', qty: 1 }, { name: '醤油', qty: 1 }] },
+    { name: 'なすの味噌炒め', ingredients: [{ name: 'なす', qty: 1 }, { name: 'ピーマン', qty: 1 }, { name: '味噌', qty: 1 }, { name: 'みりん', qty: 1 }, { name: '砂糖', qty: 1 }] },
+    { name: 'きのこの炊き込みご飯', ingredients: [{ name: '米', qty: 1 }, { name: 'しいたけ', qty: 1 }, { name: 'しめじ', qty: 1 }, { name: 'にんじん', qty: 1 }, { name: '油揚げ', qty: 1 }, { name: '醤油', qty: 1 }, { name: '酒', qty: 1 }] },
+    { name: '鶏肉とじゃがいもの照り煮', ingredients: [{ name: '鶏もも肉', qty: 1 }, { name: 'じゃがいも', qty: 1 }, { name: '醤油', qty: 1 }, { name: 'みりん', qty: 1 }, { name: '砂糖', qty: 1 }] },
+    { name: '豚バラ大根', ingredients: [{ name: '豚バラ肉', qty: 1 }, { name: '大根', qty: 1 }, { name: '醤油', qty: 1 }, { name: 'みりん', qty: 1 }, { name: '酒', qty: 1 }, { name: 'しょうが', qty: 1 }] },
+    { name: 'さば缶と大根の煮物', ingredients: [{ name: 'さば缶', qty: 1 }, { name: '大根', qty: 1 }, { name: 'しょうが', qty: 1 }, { name: '醤油', qty: 1 }] },
+    { name: 'ブロッコリーと卵のサラダ', ingredients: [{ name: 'ブロッコリー', qty: 1 }, { name: '卵', qty: 1 }, { name: 'マヨネーズ', qty: 1 }] },
+    { name: 'もやしとちくわの和え物', ingredients: [{ name: 'もやし', qty: 1 }, { name: 'ちくわ', qty: 1 }, { name: '醤油', qty: 1 }, { name: 'ごま油', qty: 1 }] },
+    { name: 'ヨーグルトとバナナの朝食', ingredients: [{ name: 'ヨーグルト', qty: 1 }, { name: 'バナナ', qty: 1 }, { name: 'パン', qty: 1 }] }
+    ];
+    return {
+      LOCATIONS: LOCATIONS, BOSAI_KUBUN: BOSAI_KUBUN, RECIPES: RECIPES,
+      locationLabel: locationLabel, kubunLabel: kubunLabel,
+      daysBetween: daysBetween, addDays: addDays, isValidDateStr: isValidDateStr,
+      elapsedDays: elapsedDays, daysLeft: daysLeft, bosaiStatus: bosaiStatus,
+      expiringBosai: expiringBosai, sufficiency: sufficiency,
+      stockPriorityCompare: stockPriorityCompare, stockQtyByName: stockQtyByName,
+      matchRecipe: matchRecipe, rankRecipes: rankRecipes,
+      buildConsultText: buildConsultText, priceHistory: priceHistory, foodForecast: foodForecast,
+      validateStockInput: validateStockInput, validateBosaiInput: validateBosaiInput, validateShoppingInput: validateShoppingInput,
+      applyStockQuantityChange: applyStockQuantityChange, checkShoppingItem: checkShoppingItem,
+      uncheckShoppingItem: uncheckShoppingItem, addBosaiShortageToShopping: addBosaiShortageToShopping,
+      decideMenu: decideMenu
+    };
+  })();
+  if (typeof module !== "undefined" && module.exports) module.exports = KakeiboDomain;
+  // === KAKEIBO_DOMAIN_END ===
+
   const TAB_IDS = ["income","expense","saving","dashboard","search"];
   function renderTabs(){
     // マイページ表示中など、タブ・パネルがDOM上に存在しない場合は何もしない
@@ -2473,6 +2967,13 @@
     TAB_IDS.forEach(function(t){
       if(el("panel-"+t)) el("panel-"+t).classList.toggle("active", t === activeTab);
     });
+    // 支出タブのバッジは防災の期限（切れ・近い）だけが対象
+    const badge = el("expenseTabBadge");
+    if(badge){
+      const n = KakeiboDomain.expiringBosai(data.bosaiItems, todayStr(), badgeDaysSetting()).length;
+      badge.hidden = n === 0;
+      badge.textContent = n;
+    }
     if(activeTab === "dashboard") drawCharts();
   }
 
@@ -2564,6 +3065,17 @@
           </div>
           <div class="field"><label>メモ（任意）</label><input type="text" class="ex-memo" maxlength="100" placeholder="例：スーパーで食材"></div>
           <div class="field"><label>金額</label>${amountInputHtml('class="ex-amount"')}</div>
+          <div class="field"><label>品目名（任意）</label><input type="text" class="ex-itemname" maxlength="50" placeholder="例：卵"></div>
+          <div class="field"><label>数量（任意）</label><input type="number" class="ex-qty" min="1" step="1" value="1"></div>
+          <label class="check-row"><input type="checkbox" class="ex-stock-toggle"><span>買ったものを在庫にも登録する</span></label>
+          <div class="ex-stock-fields" hidden>
+            <div class="field"><label>保管場所</label><select class="ex-stock-loc">${KakeiboDomain.LOCATIONS.map(function(l){ return `<option value="${l.key}">${l.label}</option>`; }).join("")}</select></div>
+            <div class="ex-bosai-fields" hidden>
+              <label class="check-row"><input type="checkbox" class="ex-bosai-toggle"><span>防災備蓄として登録する</span></label>
+              <div class="field"><label>区分</label><select class="ex-bosai-kubun">${KakeiboDomain.BOSAI_KUBUN.map(function(k){ return `<option value="${k.key}">${k.label}</option>`; }).join("")}</select></div>
+              <div class="field"><label>期限</label><input type="date" class="ex-bosai-expiry"></div>
+            </div>
+          </div>
           <button class="add-btn ex-add" data-type="${type}">追加する</button>
         </div>
         <div class="table-scroll"><table>
@@ -2683,7 +3195,28 @@
 
   function renderExpensePanel(){
     if(!el("panel-expense")) return;
-    el("panel-expense").innerHTML =
+    const head = expenseSegmentHeadHtml();
+    if(expenseSegment === "stock"){
+      el("panel-expense").innerHTML = head + stockSegmentHtml();
+      bindSegmentHead(); bindStockSegment();
+      return;
+    }
+    if(expenseSegment === "bosai"){
+      el("panel-expense").innerHTML = head + bosaiSegmentHtml();
+      bindSegmentHead(); bindBosaiSegment();
+      return;
+    }
+    if(expenseSegment === "shopping"){
+      el("panel-expense").innerHTML = head + shoppingSegmentHtml();
+      bindSegmentHead(); bindShoppingSegment();
+      return;
+    }
+    if(expenseSegment === "menu"){
+      el("panel-expense").innerHTML = head + menuSegmentHtml();
+      bindSegmentHead(); bindMenuSegment();
+      return;
+    }
+    el("panel-expense").innerHTML = head + draftsCardHtml() +
       `<div class="card receipt-card">
         <h2>📷 レシートを読み取って自動入力する</h2>
         <p class="hint">読み取った金額・日付・お店の名前から、固定費・変動費のどちらかに振り分けたフォームを用意します。読み取りは完璧ではないため、内容を確認してから「この内容で追加する」を押してください。</p>
@@ -2717,12 +3250,27 @@
     initBudgetPanel();
     el("copyLastMonthFixedBtn").onclick = copyLastMonthFixed;
 
+    bindSegmentHead();
+    bindDrafts();
+    // 在庫登録トグルの表示切替（防災の項目は保管場所が防災庫のときだけ出す）
+    each(document.querySelectorAll(".entry-form"), function(form){
+      const toggle = form.querySelector(".ex-stock-toggle");
+      if(!toggle) return;
+      const fields = form.querySelector(".ex-stock-fields");
+      const loc = form.querySelector(".ex-stock-loc");
+      const bosaiFields = form.querySelector(".ex-bosai-fields");
+      toggle.onchange = function(){ fields.hidden = !toggle.checked; };
+      loc.onchange = function(){ bosaiFields.hidden = loc.value !== "bosaiko"; };
+    });
     each(document.querySelectorAll(".ex-add"), function(btn){
       btn.onclick = function(){
         const type = btn.dataset.type;
         const form = btn.closest(".entry-form");
         const amount = parseAmount(form.querySelector(".ex-amount").value);
         if(!(amount > 0)){ form.querySelector(".ex-amount").focus(); return; }
+        const itemName = form.querySelector(".ex-itemname").value.trim();
+        const qty = Math.max(1, parseInt(form.querySelector(".ex-qty").value, 10) || 1);
+        const stockOn = form.querySelector(".ex-stock-toggle").checked;
         const record = buildRecordBase({
           type: type,
           date: form.querySelector(".ex-date").value || todayStr(),
@@ -2730,12 +3278,397 @@
           memo: form.querySelector(".ex-memo").value.trim(),
           amount: amount
         });
-        addExpenseOrMerge(record).then(function(){
-          renderExpensePanel(); renderDashboardPanel(); renderSearchPanel();
+        if(itemName){ record.itemName = itemName; record.quantity = qty; }
+        if(!stockOn){
+          addExpenseOrMerge(record).then(function(){
+            renderExpensePanel(); renderDashboardPanel(); renderSearchPanel();
+          });
+          return;
+        }
+        // 在庫にも登録する場合は合算せず、支出と在庫（または防災備蓄）を分けて記録する
+        if(!itemName){ alert("在庫に登録するには品目名を入力してください。"); form.querySelector(".ex-itemname").focus(); return; }
+        const loc = form.querySelector(".ex-stock-loc").value;
+        const bosaiOn = loc === "bosaiko" && form.querySelector(".ex-bosai-toggle").checked;
+        // 防災の入力は、支出を保存する前に検証する（検証で止まったのに支出だけ残るのを防ぐ）
+        let bInput = null;
+        if(bosaiOn){
+          bInput = { name: itemName, quantity: qty, kubun: form.querySelector(".ex-bosai-kubun").value, expiryDate: form.querySelector(".ex-bosai-expiry").value };
+          const bErr = KakeiboDomain.validateBosaiInput(bInput);
+          if(bErr){ alert(bErr); return; }
+        }
+        let chain = persistAdd("expenses", record);
+        if(bosaiOn){
+          chain = chain.then(function(){
+            return persistAdd("bosaiItems", Object.assign({ id: uid(), location: "bosaiko" }, bInput));
+          });
+        }else{
+          chain = chain.then(function(){
+            return persistAdd("stockItems", { id: uid(), name: itemName, quantity: qty, location: loc, registeredDate: todayStr(), pinned: false, refillThreshold: null });
+          });
+        }
+        chain.then(function(){
+          renderExpensePanel(); renderDashboardPanel(); renderSearchPanel(); renderTabs();
         });
       };
     });
     bindRowActions("panel-expense");
+  }
+
+
+  // ---------- 支出タブの中のセグメント（在庫・防災備蓄・買い物リスト・献立） ----------
+  let stockEditingId = null;
+  function expenseSegmentHeadHtml(){
+    const unchecked = data.shoppingItems.filter(function(s){ return !s.checked; }).length;
+    function segBtn(seg, label){
+      return `<button class="segbtn ${expenseSegment===seg ? "active" : ""}" data-seg="${seg}">${label}</button>`;
+    }
+    return `
+    <div class="card segcard">
+      <div class="segrow">
+        <button class="ghost-btn segnav ${expenseSegment==="shopping" ? "active" : ""}" data-seg="shopping">買い物リスト（${unchecked}件）</button>
+        <button class="ghost-btn segnav ${expenseSegment==="menu" ? "active" : ""}" data-seg="menu">献立</button>
+      </div>
+      <div class="segbar">${segBtn("list","支出一覧")}${segBtn("stock","在庫")}${segBtn("bosai","防災備蓄")}</div>
+    </div>`;
+  }
+  function bindSegmentHead(){
+    each(document.querySelectorAll("[data-seg]"), function(b){
+      b.onclick = function(){ expenseSegment = b.dataset.seg; menuConfirmName = null; renderExpensePanel(); };
+    });
+  }
+  // 確認待ちの下書き（連携①の受け皿。金額はここで本人が入れて初めて支出になる）
+  function draftsCardHtml(){
+    if(!data.expenseDrafts.length) return "";
+    const cats = variableCats();
+    const rows = data.expenseDrafts.map(function(d){
+      const opts = cats.map(function(c){
+        return `<option value="${escapeHtml(c.key)}" ${c.key==="食費" ? "selected" : ""}>${escapeHtml(c.key)}</option>`;
+      }).join("");
+      return `<div class="draftrow" data-draft="${escapeHtml(d.id)}">
+        <div class="draftmain"><b>${escapeHtml(d.itemName)}</b> ×${d.quantity || 1}<br><span class="hint">${escapeHtml(d.date || "")} に買ったもの</span></div>
+        <select class="draft-cat">${opts}</select>
+        <input type="text" class="draft-amount" inputmode="numeric" placeholder="金額">
+        <button class="add-btn draft-confirm">確定</button>
+        <button class="ghost-btn draft-delete">削除</button>
+      </div>`;
+    }).join("");
+    return `<div class="card draftcard"><h2>確認待ちの下書き</h2>
+      <p class="hint">買い物リストでチェックしたものです。金額を入れて「確定」を押すと、支出として記録されます。</p>${rows}</div>`;
+  }
+  function bindDrafts(){
+    each(document.querySelectorAll(".draftrow"), function(row){
+      const id = row.dataset.draft;
+      const draft = data.expenseDrafts.find(function(d){ return d.id === id; });
+      if(!draft) return;
+      row.querySelector(".draft-confirm").onclick = function(){
+        const amount = parseAmount(row.querySelector(".draft-amount").value);
+        if(!(amount > 0)){ row.querySelector(".draft-amount").focus(); return; }
+        const record = buildRecordBase({
+          type: "variable", date: draft.date || todayStr(),
+          category: row.querySelector(".draft-cat").value, memo: "",
+          itemName: draft.itemName, quantity: draft.quantity || 1, amount: amount
+        });
+        persistAdd("expenses", record).then(function(){
+          return persistDelete("expenseDrafts", id);
+        }).then(function(){
+          if(draft.sourceShoppingItemId){
+            return persistUpdate("shoppingItems", draft.sourceShoppingItemId, { draftExpenseId: null });
+          }
+        }).then(function(){ refreshExpenseAndDashboard(); renderSearchPanel(); });
+      };
+      row.querySelector(".draft-delete").onclick = function(){
+        persistDelete("expenseDrafts", id).then(function(){
+          if(draft.sourceShoppingItemId){
+            return persistUpdate("shoppingItems", draft.sourceShoppingItemId, { draftExpenseId: null });
+          }
+        }).then(function(){ refreshExpenseAndDashboard(); });
+      };
+    });
+  }
+  // ---------- 在庫 ----------
+  function stockSegmentHtml(){
+    const D = KakeiboDomain;
+    const today = todayStr();
+    const chips = [{ key: "all", label: "すべて" }].concat(D.LOCATIONS).map(function(l){
+      return `<button class="chip ${stockLocationFilter===l.key ? "active" : ""}" data-loc="${l.key}">${l.label}</button>`;
+    }).join("");
+    const rows = data.stockItems.slice().sort(D.stockPriorityCompare(today))
+      .filter(function(r){ return stockLocationFilter === "all" || r.location === stockLocationFilter; })
+      .map(function(r){
+        const e = D.elapsedDays(r.registeredDate, today);
+        return `<div class="itemrow" data-stock="${escapeHtml(r.id)}">
+          <div class="itemmain">${r.pinned ? "📌 " : ""}<b>${escapeHtml(r.name)}</b> ×${r.quantity}
+            <span class="hint">${D.locationLabel(r.location)}${e ? "・" + e + "日目" : ""}${typeof r.refillThreshold === "number" ? "・残り" + r.refillThreshold + "以下で買い物へ" : ""}</span></div>
+          <button class="ghost-btn stock-pin">${r.pinned ? "使いたい解除" : "そろそろ使いたい"}</button>
+          <button class="ghost-btn stock-minus">−</button>
+          <button class="ghost-btn stock-plus">＋</button>
+          <button class="ghost-btn stock-edit">編集</button>
+          <button class="ghost-btn stock-del">削除</button>
+        </div>`;
+      }).join("");
+    const editing = stockEditingId ? data.stockItems.find(function(r){ return r.id === stockEditingId; }) : null;
+    const locOpts = D.LOCATIONS.map(function(l){
+      return `<option value="${l.key}" ${editing && editing.location===l.key ? "selected" : ""}>${l.label}</option>`;
+    }).join("");
+    return `<div class="card">
+      <h2>在庫</h2>
+      <p class="hint">期限は扱いません。買ってからの日数で表示しています。</p>
+      <div class="chiprow">${chips}</div>
+      ${rows || `<p class="hint">在庫はまだ登録されていません</p>`}
+      <h3>${editing ? "在庫を編集する" : "在庫を追加する"}</h3>
+      <div class="entry-form">
+        <div class="field"><label>品目名</label><input type="text" id="stockName" maxlength="50" value="${editing ? escapeHtml(editing.name) : ""}" placeholder="例：卵"></div>
+        <div class="field"><label>数量</label><input type="number" id="stockQty" min="1" step="1" value="${editing ? editing.quantity : 1}"></div>
+        <div class="field"><label>保管場所</label><select id="stockLoc">${locOpts}</select></div>
+        <div class="field"><label>買い物リストに入れる残量（任意）</label><input type="number" id="stockThreshold" min="0" step="1" value="${editing && typeof editing.refillThreshold === "number" ? editing.refillThreshold : ""}" placeholder="空欄なら入れない"></div>
+        <label class="check-row"><input type="checkbox" id="stockPin" ${editing && editing.pinned ? "checked" : ""}><span>そろそろ使いたい</span></label>
+        <button class="add-btn" id="stockSaveBtn">${editing ? "保存する" : "追加する"}</button>
+        ${editing ? `<button class="ghost-btn" id="stockCancelBtn">編集をやめる</button>` : ""}
+      </div>
+      <p class="hint"><button class="ghost-btn" id="gotoMenuBtn">献立候補を見る</button></p>
+    </div>`;
+  }
+  function bindStockSegment(){
+    const D = KakeiboDomain;
+    each(document.querySelectorAll("[data-loc]"), function(b){
+      b.onclick = function(){ stockLocationFilter = b.dataset.loc; renderExpensePanel(); };
+    });
+    each(document.querySelectorAll("[data-stock]"), function(row){
+      const id = row.dataset.stock;
+      const item = data.stockItems.find(function(r){ return r.id === id; });
+      if(!item) return;
+      row.querySelector(".stock-pin").onclick = function(){
+        persistUpdate("stockItems", id, { pinned: !item.pinned }).then(refreshExpenseAndDashboard);
+      };
+      row.querySelector(".stock-plus").onclick = function(){
+        applyLinkage(function(state){ return D.applyStockQuantityChange(state, id, item.quantity + 1, uid); }).then(refreshExpenseAndDashboard);
+      };
+      row.querySelector(".stock-minus").onclick = function(){
+        if(item.quantity <= 0) return;
+        applyLinkage(function(state){ return D.applyStockQuantityChange(state, id, item.quantity - 1, uid); }).then(refreshExpenseAndDashboard);
+      };
+      row.querySelector(".stock-edit").onclick = function(){ stockEditingId = id; renderExpensePanel(); };
+      row.querySelector(".stock-del").onclick = function(){
+        if(!confirm(item.name + " を在庫から削除しますか？")) return;
+        persistDelete("stockItems", id).then(refreshExpenseAndDashboard);
+      };
+    });
+    el("stockSaveBtn").onclick = function(){
+      const name = el("stockName").value.trim();
+      const qty = parseInt(el("stockQty").value, 10);
+      const thRaw = el("stockThreshold").value;
+      const input = { name: name, quantity: qty };
+      const err = D.validateStockInput(input);
+      if(err){ alert(err); return; }
+      const fields = {
+        name: name, quantity: qty, location: el("stockLoc").value,
+        pinned: el("stockPin").checked,
+        refillThreshold: thRaw === "" ? null : Math.max(0, parseInt(thRaw, 10) || 0)
+      };
+      if(stockEditingId){
+        const id = stockEditingId;
+        stockEditingId = null;
+        persistUpdate("stockItems", id, fields).then(refreshExpenseAndDashboard);
+      }else{
+        persistAdd("stockItems", Object.assign({ id: uid(), registeredDate: todayStr() }, fields)).then(refreshExpenseAndDashboard);
+      }
+    };
+    if(el("stockCancelBtn")) el("stockCancelBtn").onclick = function(){ stockEditingId = null; renderExpensePanel(); };
+    el("gotoMenuBtn").onclick = function(){ expenseSegment = "menu"; renderExpensePanel(); };
+  }
+  // ---------- 防災備蓄 ----------
+  function bosaiSegmentHtml(){
+    const D = KakeiboDomain;
+    const today = todayStr();
+    const badgeDays = badgeDaysSetting();
+    const suf = D.sufficiency(data.bosaiItems, effectiveBosaiTargets());
+    const sufHtml = suf.map(function(s){
+      const pct = s.target > 0 ? Math.min(100, Math.round(s.have / s.target * 100)) : 0;
+      return `<div class="sufrow"><div class="sufhead"><span>${s.label}</span><span>${s.target > 0 ? s.have + " / " + s.target : s.have + " / 目標未設定"}</span></div>
+        <div class="bar"><div class="fill" style="width:${pct}%"></div></div>
+        ${s.shortage > 0 ? `<button class="ghost-btn bosai-shortage" data-kubun="${s.kubun}">不足分（${s.shortage}）を買い物リストに追加</button>` : ""}
+        ${s.target === 0 ? `<p class="hint">目標量はマイページで設定できます</p>` : ""}</div>`;
+    }).join("");
+    const rows = data.bosaiItems.slice().sort(function(a, b){ return (D.daysLeft(a.expiryDate, today) || 0) - (D.daysLeft(b.expiryDate, today) || 0); })
+      .map(function(r){
+        const left = D.daysLeft(r.expiryDate, today);
+        const st = D.bosaiStatus(r, today, badgeDays);
+        const leftLabel = left === null ? "" : (left < 0 ? `${-left}日過ぎ` : `あと${left}日`);
+        return `<div class="itemrow" data-bosai="${escapeHtml(r.id)}">
+          <div class="itemmain"><b>${escapeHtml(r.name)}</b> ×${r.quantity} <span class="hint">${D.kubunLabel(r.kubun)}・防災庫</span></div>
+          <span class="expiry ${st}">${escapeHtml(r.expiryDate || "")}（${leftLabel}）</span>
+          <button class="ghost-btn bosai-del">削除</button>
+        </div>`;
+      }).join("");
+    const kubunOpts = D.BOSAI_KUBUN.map(function(k){ return `<option value="${k.key}">${k.label}</option>`; }).join("");
+    return `<div class="card">
+      <h2>防災備蓄</h2>
+      <div class="sufbox"><h3>備蓄の充足</h3>${sufHtml}</div>
+      <p class="hint">期限が近い順に並んでいます</p>
+      ${rows || `<p class="hint">防災備蓄はまだ登録されていません</p>`}
+      <h3>備蓄を追加する</h3>
+      <div class="entry-form">
+        <div class="field"><label>品目名</label><input type="text" id="bosaiName" maxlength="50" placeholder="例：水（2L）"></div>
+        <div class="field"><label>数量</label><input type="number" id="bosaiQty" min="1" step="1" value="1"></div>
+        <div class="field"><label>区分</label><select id="bosaiKubun">${kubunOpts}</select></div>
+        <div class="field"><label>期限</label><input type="date" id="bosaiExpiry"></div>
+        <button class="add-btn" id="bosaiAddBtn">追加する</button>
+      </div>
+    </div>`;
+  }
+  function bindBosaiSegment(){
+    const D = KakeiboDomain;
+    each(document.querySelectorAll(".bosai-shortage"), function(b){
+      b.onclick = function(){
+        const kubun = b.dataset.kubun;
+        const suf = D.sufficiency(data.bosaiItems, effectiveBosaiTargets()).find(function(s){ return s.kubun === kubun; });
+        if(!suf || suf.shortage <= 0) return;
+        const rep = data.bosaiItems.find(function(r){ return r.kubun === kubun; });
+        const name = rep ? rep.name : suf.label;
+        applyLinkage(function(state){ return D.addBosaiShortageToShopping(state, name, suf.shortage, uid); }).then(refreshExpenseAndDashboard);
+      };
+    });
+    each(document.querySelectorAll("[data-bosai]"), function(row){
+      const id = row.dataset.bosai;
+      row.querySelector(".bosai-del").onclick = function(){
+        if(!confirm("この備蓄を削除しますか？")) return;
+        persistDelete("bosaiItems", id).then(refreshExpenseAndDashboard);
+      };
+    });
+    el("bosaiAddBtn").onclick = function(){
+      const input = { name: el("bosaiName").value.trim(), quantity: parseInt(el("bosaiQty").value, 10),
+        kubun: el("bosaiKubun").value, expiryDate: el("bosaiExpiry").value };
+      const err = D.validateBosaiInput(input);
+      if(err){ alert(err); return; }
+      persistAdd("bosaiItems", Object.assign({ id: uid(), location: "bosaiko" }, input)).then(refreshExpenseAndDashboard);
+    };
+  }
+  // ---------- 買い物リスト ----------
+  const SHOPPING_SOURCE_LABELS = { manual: "手入力", stock: "在庫から", bosai: "防災から", menu: "献立から" };
+  function shoppingSegmentHtml(){
+    const rows = data.shoppingItems.map(function(s){
+      return `<div class="itemrow ${s.checked ? "checked" : ""}" data-shopping="${escapeHtml(s.id)}">
+        <label class="shopcheck"><input type="checkbox" class="shop-toggle" ${s.checked ? "checked" : ""}>
+        <span><b>${escapeHtml(s.name)}</b> ×${s.quantity} <span class="hint">${SHOPPING_SOURCE_LABELS[s.source] || "手入力"}${s.checked && s.draftExpenseId ? "・下書きを作成済み" : ""}</span></span></label>
+        <button class="ghost-btn shop-del">削除</button>
+      </div>`;
+    }).join("");
+    return `<div class="card">
+      <h2>買い物リスト</h2>
+      <p class="hint">買ったらチェックを付けると、支出の下書きができます（金額は支出一覧で入れて確定します）。</p>
+      ${rows || `<p class="hint">買い物リストは空です</p>`}
+      <h3>買い物リストに追加する</h3>
+      <div class="entry-form">
+        <div class="field"><label>品目名</label><input type="text" id="shopName" maxlength="50" placeholder="例：豆腐"></div>
+        <div class="field"><label>数量</label><input type="number" id="shopQty" min="1" step="1" value="1"></div>
+        <button class="add-btn" id="shopAddBtn">追加する</button>
+      </div>
+    </div>`;
+  }
+  function bindShoppingSegment(){
+    const D = KakeiboDomain;
+    each(document.querySelectorAll("[data-shopping]"), function(row){
+      const id = row.dataset.shopping;
+      const item = data.shoppingItems.find(function(s){ return s.id === id; });
+      if(!item) return;
+      row.querySelector(".shop-toggle").onchange = function(ev){
+        if(ev.target.checked){
+          applyLinkage(function(state){ return D.checkShoppingItem(state, id, uid(), todayStr()); }).then(refreshExpenseAndDashboard);
+        }else{
+          applyLinkage(function(state){ return D.uncheckShoppingItem(state, id); }).then(refreshExpenseAndDashboard);
+        }
+      };
+      row.querySelector(".shop-del").onclick = function(){
+        persistDelete("shoppingItems", id).then(refreshExpenseAndDashboard);
+      };
+    });
+    el("shopAddBtn").onclick = function(){
+      const input = { name: el("shopName").value.trim(), quantity: parseInt(el("shopQty").value, 10) };
+      const err = D.validateShoppingInput(input);
+      if(err){ alert(err); return; }
+      persistAdd("shoppingItems", { id: uid(), name: input.name, quantity: input.quantity, source: "manual", checked: false, checkedAt: null, draftExpenseId: null }).then(refreshExpenseAndDashboard);
+    };
+  }
+  // ---------- 献立 ----------
+  function menuSegmentHtml(){
+    const D = KakeiboDomain;
+    const today = todayStr();
+    const ranked = D.rankRecipes(D.RECIPES, data.stockItems, today);
+    let confirmHtml = "";
+    if(menuConfirmName){
+      const entry = ranked.find(function(r){ return r.recipe.name === menuConfirmName; });
+      if(entry){
+        const uses = entry.recipe.ingredients.map(function(ing, i){
+          const have = D.stockQtyByName(data.stockItems, ing.name);
+          // 使う量の初期値は必要量。在庫が足りない分は、決定時に買い物リストへ回る
+          return `<div class="field"><label>${escapeHtml(ing.name)}（在庫 ${have}）</label><input type="number" class="menu-use" data-name="${escapeHtml(ing.name)}" min="0" step="1" value="${ing.qty}"></div>`;
+        }).join("");
+        confirmHtml = `<div class="card confirmcard"><h3>「${escapeHtml(entry.recipe.name)}」に決めますか？</h3>
+          <p class="hint">使う量を調整できます。足りない分は買い物リストに追加され、使った分は在庫から減ります。</p>
+          ${uses}
+          <button class="add-btn" id="menuDecideBtn">決める</button>
+          <button class="ghost-btn" id="menuCancelBtn">やめる</button></div>`;
+      }
+    }
+    const rows = ranked.map(function(r){
+      return `<div class="itemrow">
+        <div class="itemmain"><b>${escapeHtml(r.recipe.name)}</b><br>
+        <span class="hint">在庫あり ${r.have}/${r.total}${r.missing.length ? "・不足：" + r.missing.map(function(m){ return escapeHtml(m.name); }).join("、") : ""}</span></div>
+        <button class="ghost-btn menu-pick" data-name="${escapeHtml(r.recipe.name)}">この献立に決める</button>
+      </div>`;
+    }).join("");
+    return `<div class="card">
+      <h2>献立</h2>
+      <div class="consultbox">
+        <h3>定番で決まらないときは</h3>
+        <p class="hint">今ある食材をまとめた相談文を作ります。お使いのAIアプリに貼って相談できます（このアプリ自体はAIを使いません）。</p>
+        <button class="add-btn" id="consultBtn">AIに相談する文を作る</button>
+        <div id="consultArea" hidden>
+          <textarea id="consultText" class="consulttext" rows="12" readonly></textarea>
+          <button class="ghost-btn" id="consultCopyBtn">相談文をコピーする</button>
+          <p class="hint" id="consultMsg"></p>
+        </div>
+      </div>
+      <h3>定番レシピの候補</h3>
+      <p class="hint">在庫にある材料が多い順、買ってから日数が経った食材を使う順に並んでいます</p>
+      ${rows}
+    </div>${confirmHtml}`;
+  }
+  function bindMenuSegment(){
+    const D = KakeiboDomain;
+    el("consultBtn").onclick = function(){
+      const area = el("consultArea");
+      el("consultText").value = D.buildConsultText({
+        stockItems: data.stockItems, bosaiItems: data.bosaiItems,
+        avoidFoods: (data.settings && data.settings.avoidFoods) || "", today: todayStr()
+      });
+      area.hidden = false;
+    };
+    el("consultCopyBtn").onclick = function(){
+      const ta = el("consultText");
+      const done = function(){ el("consultMsg").textContent = "コピーしました。お使いのAIアプリに貼り付けてください。"; };
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(ta.value).then(done, function(){ ta.select(); el("consultMsg").textContent = "自動コピーできませんでした。文を選択してコピーしてください。"; });
+      }else{
+        ta.select();
+        el("consultMsg").textContent = "文を選択しました。コピーしてお使いのAIアプリに貼り付けてください。";
+      }
+    };
+    each(document.querySelectorAll(".menu-pick"), function(b){
+      b.onclick = function(){ menuConfirmName = b.dataset.name; renderExpensePanel(); };
+    });
+    if(el("menuCancelBtn")) el("menuCancelBtn").onclick = function(){ menuConfirmName = null; renderExpensePanel(); };
+    if(el("menuDecideBtn")) el("menuDecideBtn").onclick = function(){
+      const recipe = D.RECIPES.find(function(r){ return r.name === menuConfirmName; });
+      if(!recipe) return;
+      const uses = [];
+      each(document.querySelectorAll(".menu-use"), function(inp){
+        const q = parseInt(inp.value, 10);
+        if(q > 0) uses.push({ name: inp.dataset.name, qty: q });
+      });
+      menuConfirmName = null;
+      applyLinkage(function(state){ return D.decideMenu(state, recipe, uses, uid); }).then(refreshExpenseAndDashboard);
+    };
   }
 
   // ---------- Saving ----------
@@ -3092,7 +4025,26 @@
       t.income += m.income; t.expense += m.expense; t.saving += m.saving; t.balance += m.balance; return t;
     }, { income: 0, expense: 0, saving: 0, balance: 0 });
 
-    el("panel-dashboard").innerHTML = `
+    // 文脈カード（防災の期限だけが対象）と食費の見通し（連携⑤）
+    const expiring = KakeiboDomain.expiringBosai(data.bosaiItems, todayStr(), badgeDaysSetting());
+    const contextCard = expiring.length ? `
+      <div class="card contextcard" id="bosaiContextCard">
+        <h2>防災備蓄の期限が近づいています</h2>
+        <p class="hint">${expiring.slice(0, 3).map(function(r){
+          const left = KakeiboDomain.daysLeft(r.expiryDate, todayStr());
+          return escapeHtml(r.name) + "（" + (left < 0 ? -left + "日過ぎ" : "あと" + left + "日") + "）";
+        }).join("、")}${expiring.length > 3 ? " ほか" + (expiring.length - 3) + "件" : ""}</p>
+        <button class="ghost-btn">防災備蓄を見る</button>
+      </div>` : "";
+    const fc = KakeiboDomain.foodForecast(data.expenses, currentMonth, todayStr(), "食費");
+    const priceTop = KakeiboDomain.priceHistory(data.expenses).slice(0, 5);
+    const forecastCard = fc ? `
+      <div class="card">
+        <h2>食費の見通し</h2>
+        <p>今月の食費は ${yen(fc.spent)} です。このペースだと月末には約 ${yen(fc.projected)} になる見通しです。</p>
+        ${priceTop.length ? `<p class="hint">よく買う品目の平均単価：${priceTop.map(function(p){ return escapeHtml(p.name) + " " + yen(p.avg); }).join("、")}</p>` : ""}
+      </div>` : "";
+    el("panel-dashboard").innerHTML = contextCard + forecastCard + `
       <div class="stat-grid">
         <div class="stat income"><div class="label">収入合計</div><div class="value">${yen(totalIncome)}</div></div>
         <div class="stat expense"><div class="label">支出合計（固定+変動）</div><div class="value">${yen(totalExpense)}</div></div>
@@ -3152,6 +4104,14 @@
     // stash breakdown for chart drawing
     renderDashboardPanel._ctx = {totalIncome, totalFixed, totalVariable, totalSaving, balance, fixedBd, variableBd, yearMonths: ys.months};
     if(activeTab === "dashboard") drawCharts();
+    if(el("bosaiContextCard")){
+      el("bosaiContextCard").onclick = function(){
+        activeTab = "expense";
+        expenseSegment = "bosai";
+        renderExpensePanel();
+        renderTabs();
+      };
+    }
     if(el("pdfExportBtn")){
       el("pdfExportBtn").onclick = exportMonthlyPDF;
     }
@@ -3294,7 +4254,8 @@
     try{
       computeHashTopic().then(loadData).then(function(){
         render();
-        activeTab = "income";
+        // D1: 起動直後は家計簿（ダッシュボード）を表示する
+        activeTab = "dashboard";
         renderTabs();
       }).catch(function(e){
         console.error("初期化エラー:", e);
