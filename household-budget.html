@@ -2906,36 +2906,36 @@ return state;
 }
 
     const RECIPES = [
-    { name: '親子丼', ingredients: [{ name: 'it-potato', qty: 1 }, { name: '卵', qty: 1 }, { name: '玉ねぎ', qty: 1 }, { name: 'it-shiitake', qty: 1 }, { name: '醤油', qty: 1 }, { name: 'みりん', qty: 1 }, { name: '砂糖', qty: 1 }] },
-    { name: '肉じゃが', ingredients: [{ name: 'it-cabbage', qty: 1 }, { name: 'it-carrot', qty: 1 }, { name: 'it-egg', qty: 1 }, { name: '玉ねぎ', qty: 1 }, { name: '醤油', qty: 1 }, { name: '砂糖', qty: 1 }, { name: 'みりん', qty: 1 }, { name: '酒', qty: 1 }] },
-    { name: 'カレーライス', ingredients: [{ name: 'it-cabbage', qty: 1 }, { name: 'it-carrot', qty: 1 }, { name: 'it-egg', qty: 1 }, { name: '玉ねぎ', qty: 1 }, { name: 'カレールー', qty: 1 }, { name: 'it-shiitake', qty: 1 }] },
-    { name: '鮭の塩焼き定食', ingredients: [{ name: 'it-daikon', qty: 1 }, { name: '大根', qty: 1 }, { name: '味噌', qty: 1 }, { name: 'it-wakame', qty: 1 }, { name: 'わかめ', qty: 1 }, { name: 'it-shiitake', qty: 1 }] },
-    { name: 'さばの味噌煮', ingredients: [{ name: 'it-miso', qty: 1 }, { name: '味噌', qty: 1 }, { name: 'しょうが', qty: 1 }, { name: '砂糖', qty: 1 }, { name: '酒', qty: 1 }, { name: 'みりん', qty: 1 }] },
-    { name: '豚の生姜焼き', ingredients: [{ name: 'it-cabbage', qty: 1 }, { name: 'しょうが', qty: 1 }, { name: '醤油', qty: 1 }, { name: 'みりん', qty: 1 }, { name: '酒', qty: 1 }, { name: 'キャベツ', qty: 1 }] },
-    { name: '鶏むね肉の照り焼き', ingredients: [{ name: 'it-soysauce', qty: 1 }, { name: '醤油', qty: 1 }, { name: 'みりん', qty: 1 }, { name: '酒', qty: 1 }, { name: '砂糖', qty: 1 }] },
-    { name: '麻婆豆腐', ingredients: [{ name: 'it-wakame', qty: 1 }, { name: 'it-onion', qty: 1 }, { name: '長ねぎ', qty: 1 }, { name: 'しょうが', qty: 1 }, { name: 'にんにく', qty: 1 }, { name: '味噌', qty: 1 }, { name: '醤油', qty: 1 }] },
-    { name: '野菜炒め', ingredients: [{ name: 'it-cabbage', qty: 1 }, { name: 'キャベツ', qty: 1 }, { name: 'it-egg', qty: 1 }, { name: 'ピーマン', qty: 1 }, { name: 'it-chikuwa', qty: 1 }, { name: '鶏ガラスープの素', qty: 1 }] },
-    { name: '豆腐とわかめの味噌汁', ingredients: [{ name: 'it-wakame', qty: 1 }, { name: 'わかめ', qty: 1 }, { name: '味噌', qty: 1 }] },
-    { name: '納豆ご飯と卵焼き', ingredients: [{ name: 'it-egg', qty: 1 }, { name: '卵', qty: 1 }, { name: 'it-shiitake', qty: 1 }, { name: '海苔', qty: 1 }] },
-    { name: 'ツナとキャベツのパスタ', ingredients: [{ name: 'it-tuna-can', qty: 1 }, { name: 'ツナ缶', qty: 1 }, { name: 'キャベツ', qty: 1 }, { name: '醤油', qty: 1 }, { name: 'バター', qty: 1 }] },
-    { name: '肉うどん', ingredients: [{ name: 'it-pork-koma', qty: 1 }, { name: 'it-cabbage', qty: 1 }, { name: '長ねぎ', qty: 1 }, { name: 'めんつゆ', qty: 1 }] },
-    { name: 'そばとかき揚げ', ingredients: [{ name: 'it-onion', qty: 1 }, { name: '玉ねぎ', qty: 1 }, { name: 'it-egg', qty: 1 }, { name: '小麦粉', qty: 1 }, { name: 'めんつゆ', qty: 1 }] },
-    { name: 'ハンバーグ', ingredients: [{ name: 'it-onion', qty: 1 }, { name: '玉ねぎ', qty: 1 }, { name: 'パン粉', qty: 1 }, { name: '牛乳', qty: 1 }, { name: '卵', qty: 1 }, { name: 'ケチャップ', qty: 1 }] },
-    { name: 'オムライス', ingredients: [{ name: 'it-potato', qty: 1 }, { name: '卵', qty: 1 }, { name: 'it-shiitake', qty: 1 }, { name: '玉ねぎ', qty: 1 }, { name: 'ケチャップ', qty: 1 }, { name: 'バター', qty: 1 }] },
-    { name: 'チャーハン', ingredients: [{ name: 'it-shiitake', qty: 1 }, { name: '卵', qty: 1 }, { name: 'ハム', qty: 1 }, { name: '長ねぎ', qty: 1 }, { name: '醤油', qty: 1 }, { name: 'ごま油', qty: 1 }] },
-    { name: '焼きそば', ingredients: [{ name: 'it-pork-koma', qty: 1 }, { name: 'it-cabbage', qty: 1 }, { name: 'キャベツ', qty: 1 }, { name: 'it-egg', qty: 1 }, { name: 'it-chikuwa', qty: 1 }] },
-    { name: 'ほうれん草のおひたしと焼き鮭', ingredients: [{ name: 'it-salmon', qty: 1 }, { name: 'it-daikon', qty: 1 }, { name: '醤油', qty: 1 }] },
-    { name: '小松菜と油揚げの煮びたし', ingredients: [{ name: 'it-aburaage', qty: 1 }, { name: '油揚げ', qty: 1 }, { name: 'めんつゆ', qty: 1 }] },
-    { name: 'ポテトサラダ', ingredients: [{ name: 'it-carrot', qty: 1 }, { name: 'it-egg', qty: 1 }, { name: 'きゅうり', qty: 1 }, { name: 'ハム', qty: 1 }, { name: 'マヨネーズ', qty: 1 }] },
-    { name: 'にんじんしりしり', ingredients: [{ name: 'it-egg', qty: 1 }, { name: '卵', qty: 1 }, { name: 'ツナ缶', qty: 1 }, { name: '醤油', qty: 1 }] },
-    { name: 'なすの味噌炒め', ingredients: [{ name: 'it-piman', qty: 1 }, { name: 'ピーマン', qty: 1 }, { name: '味噌', qty: 1 }, { name: 'みりん', qty: 1 }, { name: '砂糖', qty: 1 }] },
-    { name: 'きのこの炊き込みご飯', ingredients: [{ name: 'it-shiitake', qty: 1 }, { name: 'しいたけ', qty: 1 }, { name: 'しめじ', qty: 1 }, { name: 'it-egg', qty: 1 }, { name: '油揚げ', qty: 1 }, { name: '醤油', qty: 1 }, { name: '酒', qty: 1 }] },
-    { name: '鶏肉とじゃがいもの照り煮', ingredients: [{ name: 'it-potato', qty: 1 }, { name: 'it-carrot', qty: 1 }, { name: '醤油', qty: 1 }, { name: 'みりん', qty: 1 }, { name: '砂糖', qty: 1 }] },
-    { name: '豚バラ大根', ingredients: [{ name: 'it-daikon', qty: 1 }, { name: '大根', qty: 1 }, { name: '醤油', qty: 1 }, { name: 'みりん', qty: 1 }, { name: '酒', qty: 1 }, { name: 'しょうが', qty: 1 }] },
-    { name: 'さば缶と大根の煮物', ingredients: [{ name: 'it-daikon', qty: 1 }, { name: '大根', qty: 1 }, { name: 'しょうが', qty: 1 }, { name: '醤油', qty: 1 }] },
-    { name: 'ブロッコリーと卵のサラダ', ingredients: [{ name: 'it-egg', qty: 1 }, { name: '卵', qty: 1 }, { name: 'マヨネーズ', qty: 1 }] },
-    { name: 'もやしとちくわの和え物', ingredients: [{ name: 'it-chikuwa', qty: 1 }, { name: 'ちくわ', qty: 1 }, { name: '醤油', qty: 1 }, { name: 'ごま油', qty: 1 }] },
-    { name: 'ヨーグルトとバナナの朝食', ingredients: [{ name: 'it-banana', qty: 1 }, { name: 'バナナ', qty: 1 }, { name: 'パン', qty: 1 }] }
+    { name: '親子丼', ingredients: [{ name: '鶏もも肉', qty: 1 }, { name: '卵', qty: 1 }, { name: '玉ねぎ', qty: 1 }, { name: '米', qty: 1 }, { name: '醤油', qty: 1 }, { name: 'みりん', qty: 1 }, { name: '砂糖', qty: 1 }] },
+    { name: '肉じゃが', ingredients: [{ name: '豚こま肉', qty: 1 }, { name: 'じゃがいも', qty: 1 }, { name: 'にんじん', qty: 1 }, { name: '玉ねぎ', qty: 1 }, { name: '醤油', qty: 1 }, { name: '砂糖', qty: 1 }, { name: 'みりん', qty: 1 }, { name: '酒', qty: 1 }] },
+    { name: 'カレーライス', ingredients: [{ name: '豚こま肉', qty: 1 }, { name: 'じゃがいも', qty: 1 }, { name: 'にんじん', qty: 1 }, { name: '玉ねぎ', qty: 1 }, { name: 'カレールー', qty: 1 }, { name: '米', qty: 1 }] },
+    { name: '鮭の塩焼き定食', ingredients: [{ name: '鮭', qty: 1 }, { name: '大根', qty: 1 }, { name: '味噌', qty: 1 }, { name: '豆腐', qty: 1 }, { name: 'わかめ', qty: 1 }, { name: '米', qty: 1 }] },
+    { name: 'さばの味噌煮', ingredients: [{ name: 'さば', qty: 1 }, { name: '味噌', qty: 1 }, { name: 'しょうが', qty: 1 }, { name: '砂糖', qty: 1 }, { name: '酒', qty: 1 }, { name: 'みりん', qty: 1 }] },
+    { name: '豚の生姜焼き', ingredients: [{ name: '豚こま肉', qty: 1 }, { name: 'しょうが', qty: 1 }, { name: '醤油', qty: 1 }, { name: 'みりん', qty: 1 }, { name: '酒', qty: 1 }, { name: 'キャベツ', qty: 1 }] },
+    { name: '鶏むね肉の照り焼き', ingredients: [{ name: '鶏むね肉', qty: 1 }, { name: '醤油', qty: 1 }, { name: 'みりん', qty: 1 }, { name: '酒', qty: 1 }, { name: '砂糖', qty: 1 }] },
+    { name: '麻婆豆腐', ingredients: [{ name: '豆腐', qty: 1 }, { name: 'ひき肉', qty: 1 }, { name: '長ねぎ', qty: 1 }, { name: 'しょうが', qty: 1 }, { name: 'にんにく', qty: 1 }, { name: '味噌', qty: 1 }, { name: '醤油', qty: 1 }] },
+    { name: '野菜炒め', ingredients: [{ name: '豚こま肉', qty: 1 }, { name: 'キャベツ', qty: 1 }, { name: 'にんじん', qty: 1 }, { name: 'ピーマン', qty: 1 }, { name: 'もやし', qty: 1 }, { name: '鶏ガラスープの素', qty: 1 }] },
+    { name: '豆腐とわかめの味噌汁', ingredients: [{ name: '豆腐', qty: 1 }, { name: 'わかめ', qty: 1 }, { name: '味噌', qty: 1 }] },
+    { name: '納豆ご飯と卵焼き', ingredients: [{ name: '納豆', qty: 1 }, { name: '卵', qty: 1 }, { name: '米', qty: 1 }, { name: '海苔', qty: 1 }] },
+    { name: 'ツナとキャベツのパスタ', ingredients: [{ name: 'パスタ', qty: 1 }, { name: 'ツナ缶', qty: 1 }, { name: 'キャベツ', qty: 1 }, { name: '醤油', qty: 1 }, { name: 'バター', qty: 1 }] },
+    { name: '肉うどん', ingredients: [{ name: '冷凍うどん', qty: 1 }, { name: '豚こま肉', qty: 1 }, { name: '長ねぎ', qty: 1 }, { name: 'めんつゆ', qty: 1 }] },
+    { name: 'そばとかき揚げ', ingredients: [{ name: 'そば', qty: 1 }, { name: '玉ねぎ', qty: 1 }, { name: 'にんじん', qty: 1 }, { name: '小麦粉', qty: 1 }, { name: 'めんつゆ', qty: 1 }] },
+    { name: 'ハンバーグ', ingredients: [{ name: 'ひき肉', qty: 1 }, { name: '玉ねぎ', qty: 1 }, { name: 'パン粉', qty: 1 }, { name: '牛乳', qty: 1 }, { name: '卵', qty: 1 }, { name: 'ケチャップ', qty: 1 }] },
+    { name: 'オムライス', ingredients: [{ name: '鶏もも肉', qty: 1 }, { name: '卵', qty: 1 }, { name: '米', qty: 1 }, { name: '玉ねぎ', qty: 1 }, { name: 'ケチャップ', qty: 1 }, { name: 'バター', qty: 1 }] },
+    { name: 'チャーハン', ingredients: [{ name: '米', qty: 1 }, { name: '卵', qty: 1 }, { name: 'ハム', qty: 1 }, { name: '長ねぎ', qty: 1 }, { name: '醤油', qty: 1 }, { name: 'ごま油', qty: 1 }] },
+    { name: '焼きそば', ingredients: [{ name: '焼きそば麺', qty: 1 }, { name: '豚こま肉', qty: 1 }, { name: 'キャベツ', qty: 1 }, { name: 'にんじん', qty: 1 }, { name: 'もやし', qty: 1 }] },
+    { name: 'ほうれん草のおひたしと焼き鮭', ingredients: [{ name: 'ほうれん草', qty: 1 }, { name: '鮭', qty: 1 }, { name: '醤油', qty: 1 }] },
+    { name: '小松菜と油揚げの煮びたし', ingredients: [{ name: '小松菜', qty: 1 }, { name: '油揚げ', qty: 1 }, { name: 'めんつゆ', qty: 1 }] },
+    { name: 'ポテトサラダ', ingredients: [{ name: 'じゃがいも', qty: 1 }, { name: 'にんじん', qty: 1 }, { name: 'きゅうり', qty: 1 }, { name: 'ハム', qty: 1 }, { name: 'マヨネーズ', qty: 1 }] },
+    { name: 'にんじんしりしり', ingredients: [{ name: 'にんじん', qty: 1 }, { name: '卵', qty: 1 }, { name: 'ツナ缶', qty: 1 }, { name: '醤油', qty: 1 }] },
+    { name: 'なすの味噌炒め', ingredients: [{ name: 'なす', qty: 1 }, { name: 'ピーマン', qty: 1 }, { name: '味噌', qty: 1 }, { name: 'みりん', qty: 1 }, { name: '砂糖', qty: 1 }] },
+    { name: 'きのこの炊き込みご飯', ingredients: [{ name: '米', qty: 1 }, { name: 'しいたけ', qty: 1 }, { name: 'しめじ', qty: 1 }, { name: 'にんじん', qty: 1 }, { name: '油揚げ', qty: 1 }, { name: '醤油', qty: 1 }, { name: '酒', qty: 1 }] },
+    { name: '鶏肉とじゃがいもの照り煮', ingredients: [{ name: '鶏もも肉', qty: 1 }, { name: 'じゃがいも', qty: 1 }, { name: '醤油', qty: 1 }, { name: 'みりん', qty: 1 }, { name: '砂糖', qty: 1 }] },
+    { name: '豚バラ大根', ingredients: [{ name: '豚バラ肉', qty: 1 }, { name: '大根', qty: 1 }, { name: '醤油', qty: 1 }, { name: 'みりん', qty: 1 }, { name: '酒', qty: 1 }, { name: 'しょうが', qty: 1 }] },
+    { name: 'さば缶と大根の煮物', ingredients: [{ name: 'さば缶', qty: 1 }, { name: '大根', qty: 1 }, { name: 'しょうが', qty: 1 }, { name: '醤油', qty: 1 }] },
+    { name: 'ブロッコリーと卵のサラダ', ingredients: [{ name: 'ブロッコリー', qty: 1 }, { name: '卵', qty: 1 }, { name: 'マヨネーズ', qty: 1 }] },
+    { name: 'もやしとちくわの和え物', ingredients: [{ name: 'もやし', qty: 1 }, { name: 'ちくわ', qty: 1 }, { name: '醤油', qty: 1 }, { name: 'ごま油', qty: 1 }] },
+    { name: 'ヨーグルトとバナナの朝食', ingredients: [{ name: 'ヨーグルト', qty: 1 }, { name: 'バナナ', qty: 1 }, { name: 'パン', qty: 1 }] }
     ];
     return {
       LOCATIONS: LOCATIONS, BOSAI_KUBUN: BOSAI_KUBUN, RECIPES: RECIPES,
@@ -3287,11 +3287,15 @@ return state;
         if(!itemName){ alert("在庫に登録するには品目名を入力してください。"); form.querySelector(".ex-itemname").focus(); return; }
         const loc = form.querySelector(".ex-stock-loc").value;
         const bosaiOn = loc === "bosaiko" && form.querySelector(".ex-bosai-toggle").checked;
-        let chain = persistAdd("expenses", record);
+        // 防災の入力は、支出を保存する前に検証する（検証で止まったのに支出だけ残るのを防ぐ）
+        let bInput = null;
         if(bosaiOn){
-          const bInput = { name: itemName, quantity: qty, kubun: form.querySelector(".ex-bosai-kubun").value, expiryDate: form.querySelector(".ex-bosai-expiry").value };
+          bInput = { name: itemName, quantity: qty, kubun: form.querySelector(".ex-bosai-kubun").value, expiryDate: form.querySelector(".ex-bosai-expiry").value };
           const bErr = KakeiboDomain.validateBosaiInput(bInput);
           if(bErr){ alert(bErr); return; }
+        }
+        let chain = persistAdd("expenses", record);
+        if(bosaiOn){
           chain = chain.then(function(){
             return persistAdd("bosaiItems", Object.assign({ id: uid(), location: "bosaiko" }, bInput));
           });
