@@ -3610,6 +3610,10 @@ return state;
           <button class="ghost-btn" id="menuCancelBtn">やめる</button></div>`;
       }
     }
+    const pickItems = (data.stockItems || []).filter(function(it){ return Number(it.quantity) > 0; }).slice().sort(D.stockPriorityCompare(today));
+    const pickRows = pickItems.map(function(it){
+      return `<label class="itemrow"><input type="checkbox" class="consult-check" data-cid="${escapeHtml(it.id)}" checked> <span class="itemmain">${escapeHtml(it.name)} ×${Number(it.quantity)}（買ってから${D.elapsedDays(it.registeredDate, today)}日目）</span></label>`;
+    }).join("");
     const rows = ranked.map(function(r){
       return `<div class="itemrow">
         <div class="itemmain"><b>${escapeHtml(r.recipe.name)}</b><br>
@@ -3621,8 +3625,9 @@ return state;
       <h2>献立</h2>
       <div class="consultbox">
         <h3>定番で決まらないときは</h3>
-        <p class="hint">今ある食材をまとめた相談文を作ります。お使いのAIアプリに貼って相談できます（このアプリ自体はAIを使いません）。</p>
-        <button class="add-btn" id="consultBtn">AIに相談する文を作る</button>
+        <p class="hint">使いたい材料にチェックを入れてください（初期状態は全部選択）。選んだ材料から相談文を自動で組み立てます。お使いのAIアプリに貼って相談できます（このアプリ自体はAIを使いません）。</p>
+        <div id="consultPick">${pickRows || '<p class="hint">在庫に食材がありません</p>'}</div>
+        <button class="add-btn" id="consultBtn">選択した材料で相談文を作る</button>
         <div id="consultArea" hidden>
           <textarea id="consultText" class="consulttext" rows="12" readonly></textarea>
           <button class="ghost-btn" id="consultCopyBtn">相談文をコピーする</button>
@@ -3638,8 +3643,16 @@ return state;
     const D = KakeiboDomain;
     el("consultBtn").onclick = function(){
       const area = el("consultArea");
+      let items = data.stockItems || [];
+      const checks = document.querySelectorAll(".consult-check");
+      if(checks.length){
+        const ids = {};
+        each(checks, function(c){ if(c.checked) ids[c.dataset.cid] = true; });
+        items = items.filter(function(it){ return ids[it.id]; });
+        if(!items.length){ alert("材料を1つ以上選んでください"); return; }
+      }
       el("consultText").value = D.buildConsultText({
-        stockItems: data.stockItems, bosaiItems: data.bosaiItems,
+        stockItems: items, bosaiItems: data.bosaiItems,
         avoidFoods: (data.settings && data.settings.avoidFoods) || "", today: todayStr()
       });
       area.hidden = false;
