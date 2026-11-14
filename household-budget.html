@@ -3600,8 +3600,8 @@ return state;
       if(entry){
         const uses = entry.recipe.ingredients.map(function(ing, i){
           const have = D.stockQtyByName(data.stockItems, ing.name);
-          const use = Math.min(ing.qty, have);
-          return `<div class="field"><label>${escapeHtml(ing.name)}（在庫 ${have}）</label><input type="number" class="menu-use" data-name="${escapeHtml(ing.name)}" min="0" step="1" value="${use}"></div>`;
+          // 使う量の初期値は必要量。在庫が足りない分は、決定時に買い物リストへ回る
+          return `<div class="field"><label>${escapeHtml(ing.name)}（在庫 ${have}）</label><input type="number" class="menu-use" data-name="${escapeHtml(ing.name)}" min="0" step="1" value="${ing.qty}"></div>`;
         }).join("");
         confirmHtml = `<div class="card confirmcard"><h3>「${escapeHtml(entry.recipe.name)}」に決めますか？</h3>
           <p class="hint">使う量を調整できます。足りない分は買い物リストに追加され、使った分は在庫から減ります。</p>
