@@ -4254,7 +4254,8 @@ return state;
     try{
       computeHashTopic().then(loadData).then(function(){
         render();
-        activeTab = "income";
+        // D1: 起動直後は家計簿（ダッシュボード）を表示する
+        activeTab = "dashboard";
         renderTabs();
       }).catch(function(e){
         console.error("初期化エラー:", e);
