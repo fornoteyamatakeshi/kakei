@@ -2644,8 +2644,10 @@ return d.getUTCFullYear() + "-" + String(d.getUTCMonth()+1).padStart(2,"0") + "-
 function isValidDateStr(s){
 const p = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || "");
 if(!p) return false;
-const m = +p[2], d = +p[3];
-return m >= 1 && m <= 12 && d >= 1 && d <= 31;
+const y = +p[1], m = +p[2], d = +p[3];
+if(m < 1 || m > 12 || d < 1 || d > 31) return false;
+const dt = new Date(Date.UTC(y, m - 1, d));
+return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
 }
 // 登録日からの経過日数。当日 = 1 日目。
 function elapsedDays(registeredDate, today){
@@ -3342,7 +3344,7 @@ return state;
       const opts = cats.map(function(c){
         return `<option value="${escapeHtml(c.key)}" ${c.key==="食費" ? "selected" : ""}>${escapeHtml(c.key)}</option>`;
       }).join("");
-      return `<div class="draftrow" data-draft="${d.id}">
+      return `<div class="draftrow" data-draft="${escapeHtml(d.id)}">
         <div class="draftmain"><b>${escapeHtml(d.itemName)}</b> ×${d.quantity || 1}<br><span class="hint">${escapeHtml(d.date || "")} に買ったもの</span></div>
         <select class="draft-cat">${opts}</select>
         <input type="text" class="draft-amount" inputmode="numeric" placeholder="金額">
@@ -3394,7 +3396,7 @@ return state;
       .filter(function(r){ return stockLocationFilter === "all" || r.location === stockLocationFilter; })
       .map(function(r){
         const e = D.elapsedDays(r.registeredDate, today);
-        return `<div class="itemrow" data-stock="${r.id}">
+        return `<div class="itemrow" data-stock="${escapeHtml(r.id)}">
           <div class="itemmain">${r.pinned ? "📌 " : ""}<b>${escapeHtml(r.name)}</b> ×${r.quantity}
             <span class="hint">${D.locationLabel(r.location)}${e ? "・" + e + "日目" : ""}${typeof r.refillThreshold === "number" ? "・残り" + r.refillThreshold + "以下で買い物へ" : ""}</span></div>
           <button class="ghost-btn stock-pin">${r.pinned ? "使いたい解除" : "そろそろ使いたい"}</button>
@@ -3492,7 +3494,7 @@ return state;
         const left = D.daysLeft(r.expiryDate, today);
         const st = D.bosaiStatus(r, today, badgeDays);
         const leftLabel = left === null ? "" : (left < 0 ? `${-left}日過ぎ` : `あと${left}日`);
-        return `<div class="itemrow" data-bosai="${r.id}">
+        return `<div class="itemrow" data-bosai="${escapeHtml(r.id)}">
           <div class="itemmain"><b>${escapeHtml(r.name)}</b> ×${r.quantity} <span class="hint">${D.kubunLabel(r.kubun)}・防災庫</span></div>
           <span class="expiry ${st}">${escapeHtml(r.expiryDate || "")}（${leftLabel}）</span>
           <button class="ghost-btn bosai-del">削除</button>
@@ -3545,7 +3547,7 @@ return state;
   const SHOPPING_SOURCE_LABELS = { manual: "手入力", stock: "在庫から", bosai: "防災から", menu: "献立から" };
   function shoppingSegmentHtml(){
     const rows = data.shoppingItems.map(function(s){
-      return `<div class="itemrow ${s.checked ? "checked" : ""}" data-shopping="${s.id}">
+      return `<div class="itemrow ${s.checked ? "checked" : ""}" data-shopping="${escapeHtml(s.id)}">
         <label class="shopcheck"><input type="checkbox" class="shop-toggle" ${s.checked ? "checked" : ""}>
         <span><b>${escapeHtml(s.name)}</b> ×${s.quantity} <span class="hint">${SHOPPING_SOURCE_LABELS[s.source] || "手入力"}${s.checked && s.draftExpenseId ? "・下書きを作成済み" : ""}</span></span></label>
         <button class="ghost-btn shop-del">削除</button>
